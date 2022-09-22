@@ -13,7 +13,7 @@ import {
 import { map, Observable } from 'rxjs';
 import { EventApiService } from '../../drawer/services';
 import { Entity } from '../../shared/utils';
-import { WorkspaceGraph } from '../utils';
+import { WorkspaceDto } from '../utils';
 
 export type CreateWorkspaceDto = Entity<{
   name: string;
@@ -33,22 +33,20 @@ export class WorkspaceApiService {
   private readonly _firestore = inject(Firestore);
   private readonly _eventApiService = inject(EventApiService);
 
-  getWorkspace(workspaceId: string): Observable<WorkspaceGraph> {
+  getWorkspace(workspaceId: string): Observable<WorkspaceDto> {
     const workspaceRef = doc(this._firestore, `graphs/${workspaceId}`);
 
     return docData(workspaceRef).pipe(
       map((workspace) => ({
         id: workspaceId,
-        kind: workspace['kind'],
-        name: workspace['name'],
-        thumbnailUrl: workspace['thumbnailUrl'],
+        data: workspace['data'],
         nodes: workspace['nodes'],
         edges: workspace['edges'],
       }))
     );
   }
 
-  getWorkspacesByOwner(ownerId: string): Observable<WorkspaceGraph[]> {
+  getWorkspacesByOwner(ownerId: string): Observable<WorkspaceDto[]> {
     return collectionData(
       query(
         collectionGroup(this._firestore, 'graphs').withConverter({
@@ -57,16 +55,14 @@ export class WorkspaceApiService {
 
             return {
               id: snapshot.id,
-              kind: data['kind'],
-              name: data['name'],
-              thumbnailUrl: data['thumbnailUrl'],
+              data: data['data'],
               nodes: data['nodes'],
               edges: data['edges'],
             };
           },
           toFirestore: (it) => it,
         }),
-        where('userId', '==', ownerId),
+        where('data.userId', '==', ownerId),
         where('kind', '==', 'workspace'),
         orderBy(documentId())
       )
@@ -85,7 +81,6 @@ export class WorkspaceApiService {
         name,
         userId,
       },
-      graphIds: [id],
     });
   }
 
@@ -96,7 +91,6 @@ export class WorkspaceApiService {
         id,
         changes,
       },
-      graphIds: [id],
     });
   }
 
@@ -104,7 +98,6 @@ export class WorkspaceApiService {
     return this._eventApiService.emit(clientId, {
       type: 'deleteWorkspace',
       payload: { id },
-      graphIds: [id],
     });
   }
 
@@ -116,7 +109,6 @@ export class WorkspaceApiService {
     return this._eventApiService.emit(clientId, {
       type: 'updateWorkspaceThumbnail',
       payload: { id, fileId, fileUrl },
-      graphIds: [id],
     });
   }
 }

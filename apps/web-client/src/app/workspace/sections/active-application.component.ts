@@ -21,12 +21,10 @@ import {
   withLatestFrom,
 } from 'rxjs';
 import { ClickEvent } from '../../drawer/utils';
-import { openEditInstructionApplicationModal } from '../../instruction-application/components';
-
 import { ActiveComponent } from '../../shared/components';
 import {
   FollowCursorDirective,
-  KeyboardListenerDirective,
+  KeyListenerDirective,
 } from '../../shared/directives';
 import {
   Entity,
@@ -36,11 +34,11 @@ import {
   isNull,
   Option,
 } from '../../shared/utils';
-import { WorkspaceNodeType } from '../utils';
+import { openEditApplicationModal } from '../components';
 
 export interface AddNodeDto {
   data: Entity<{
-    kind: WorkspaceNodeType;
+    kind: string;
     name: string;
     thumbnailUrl: string;
   }>;
@@ -78,8 +76,8 @@ const initialState: ViewModel = {
       class="fixed z-10 pointer-events-none"
       pgFollowCursor
       [ngClass]="{ hidden: (isAdding$ | ngrxPush) }"
-      pgKeyboardListener
-      (pgKeyDown)="onKeyDown($event)"
+      pgKeyListener="Escape"
+      (pgKeyDown)="onEscapePressed()"
     ></pg-active>
   `,
   standalone: true,
@@ -88,7 +86,7 @@ const initialState: ViewModel = {
     PushModule,
     FollowCursorDirective,
     ActiveComponent,
-    KeyboardListenerDirective,
+    KeyListenerDirective,
   ],
 })
 export class ActiveApplicationComponent
@@ -125,19 +123,19 @@ export class ActiveApplicationComponent
 
           this.patchState({ isAdding: true });
 
-          return openEditInstructionApplicationModal(this._dialog, {
-            instructionApplication: null,
+          return openEditApplicationModal(this._dialog, {
+            application: null,
           }).closed.pipe(
-            tap((instructionApplication) => {
+            tap((application) => {
               this.patchState({ isAdding: false });
 
-              if (instructionApplication) {
+              if (application) {
                 this.pgDeactivate.emit();
                 this.pgAddNode.emit({
                   data: {
                     id: generateId(),
-                    name: instructionApplication.name,
-                    kind: 'solana',
+                    name: application.name,
+                    kind: 'application',
                     thumbnailUrl: active.thumbnailUrl,
                   },
                   options: {
@@ -156,7 +154,7 @@ export class ActiveApplicationComponent
     tap((event) => {
       this.patchState({
         canAdd: isChildOf(event.target as HTMLElement, (element) =>
-          element.matches('pg-drawer')
+          element.matches('#cy')
         ),
       });
     })
@@ -174,10 +172,7 @@ export class ActiveApplicationComponent
     this._handleMouseMove(this._mouseMove.asObservable());
   }
 
-  onKeyDown(event: KeyboardEvent) {
-    if (event.key === 'Escape') {
-      event.stopPropagation();
-      this.pgDeactivate.emit();
-    }
+  onEscapePressed() {
+    this.pgDeactivate.emit();
   }
 }

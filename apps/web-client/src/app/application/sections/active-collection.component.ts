@@ -1,38 +1,73 @@
 import { Dialog } from '@angular/cdk/dialog';
 import { CommonModule } from '@angular/common';
-import { Component, HostListener, inject, OnInit } from '@angular/core';
+import {
+  Component,
+  EventEmitter,
+  HostListener,
+  inject,
+  Input,
+  OnInit,
+  Output,
+} from '@angular/core';
 import { PushModule } from '@ngrx/component';
 import { ComponentStore } from '@ngrx/component-store';
 import {
   concatMap,
   EMPTY,
   exhaustMap,
-  filter,
   of,
   Subject,
   tap,
   withLatestFrom,
 } from 'rxjs';
-import { BoardStore } from '../../board/stores';
-import { DrawerStore } from '../../drawer/stores';
-import { ClickEvent, isClickEvent } from '../../drawer/utils';
-import { openEditInstructionSignerModal } from '../../instruction-signer/components';
+import { ClickEvent } from '../../drawer/utils';
 import { ActiveComponent } from '../../shared/components';
-import { FollowCursorDirective } from '../../shared/directives';
-import { isChildOf, isNull } from '../../shared/utils';
+import {
+  FollowCursorDirective,
+  KeyListenerDirective,
+} from '../../shared/directives';
+import {
+  Entity,
+  generateId,
+  isChildOf,
+  isNotNull,
+  isNull,
+  Option,
+} from '../../shared/utils';
+import { openEditCollectionModal } from '../components';
+
+export interface AddCollectionNodeDto {
+  data: Entity<{
+    kind: 'collection';
+    name: string;
+    thumbnailUrl: string;
+  }>;
+  options: {
+    position: {
+      x: number;
+      y: number;
+    };
+  };
+}
+
+interface Active {
+  thumbnailUrl: string;
+}
 
 interface ViewModel {
   canAdd: boolean;
   isAdding: boolean;
+  active: Option<Active>;
 }
 
 const initialState: ViewModel = {
   canAdd: false,
   isAdding: false,
+  active: null,
 };
 
 @Component({
-  selector: 'pg-active-signer',
+  selector: 'pg-active-collection',
   template: `
     <pg-active
       *ngIf="active$ | ngrxPush as active"
@@ -41,35 +76,41 @@ const initialState: ViewModel = {
       class="fixed z-10 pointer-events-none"
       pgFollowCursor
       [ngClass]="{ hidden: (isAdding$ | ngrxPush) }"
+      pgKeyListener="Escape"
+      (pgKeyDown)="onEscapePressed()"
     ></pg-active>
   `,
   standalone: true,
-  imports: [CommonModule, PushModule, FollowCursorDirective, ActiveComponent],
+  imports: [
+    CommonModule,
+    PushModule,
+    FollowCursorDirective,
+    ActiveComponent,
+    KeyListenerDirective,
+  ],
 })
-export class ActiveSignerComponent
+export class ActiveCollectionComponent
   extends ComponentStore<ViewModel>
   implements OnInit
 {
-  private readonly _boardStore = inject(BoardStore);
-  private readonly _drawerStore = inject(DrawerStore);
   private readonly _dialog = inject(Dialog);
 
   private readonly _mouseMove = new Subject<MouseEvent>();
 
-  readonly active$ = this.select(this._boardStore.active$, (active) => {
-    if (isNull(active) || active.kind !== 'signer') {
-      return null;
-    }
-
-    return {
-      id: 'signer',
-      name: 'signer',
-      kind: 'signer' as const,
-      thumbnailUrl: 'assets/generic/signer.png',
-    };
-  });
+  readonly active$ = this.select(({ active }) => active);
   readonly canAdd$ = this.select(({ canAdd }) => canAdd);
   readonly isAdding$ = this.select(({ isAdding }) => isAdding);
+
+  @Input() set pgActive(active: Option<Active>) {
+    this.patchState({ active });
+  }
+  @Input() set pgClickEvent(event: Option<ClickEvent>) {
+    if (isNotNull(event)) {
+      this._handleDrawerClick(event);
+    }
+  }
+  @Output() pgAddNode = new EventEmitter<AddCollectionNodeDto>();
+  @Output() pgDeactivate = new EventEmitter();
 
   private readonly _handleDrawerClick = this.effect<ClickEvent>(
     exhaustMap((event) => {
@@ -82,25 +123,25 @@ export class ActiveSignerComponent
 
           this.patchState({ isAdding: true });
 
-          return openEditInstructionSignerModal(this._dialog, {
-            instructionSigner: null,
+          return openEditCollectionModal(this._dialog, {
+            collection: null,
           }).closed.pipe(
-            tap((instructionSigner) => {
+            tap((collection) => {
               this.patchState({ isAdding: false });
 
-              if (instructionSigner) {
-                this._boardStore.setActive(null);
-                /* this._drawerStore.addNode(
-                  {
+              if (collection) {
+                this.pgDeactivate.emit();
+                this.pgAddNode.emit({
+                  data: {
                     id: generateId(),
-                    kind: active.kind,
-                    name: active.name,
-                    ref: active.id,
-                    label: instructionSigner.name,
-                    image: active.thumbnailUrl,
+                    name: collection.name,
+                    kind: 'collection',
+                    thumbnailUrl: active.thumbnailUrl,
                   },
-                  event.payload
-                ); */
+                  options: {
+                    position: event.payload,
+                  },
+                });
               }
             })
           );
@@ -113,7 +154,7 @@ export class ActiveSignerComponent
     tap((event) => {
       this.patchState({
         canAdd: isChildOf(event.target as HTMLElement, (element) =>
-          element.matches('pg-drawer')
+          element.matches('#cy')
         ),
       });
     })
@@ -128,9 +169,10 @@ export class ActiveSignerComponent
   }
 
   ngOnInit() {
-    this._handleDrawerClick(
-      this._drawerStore.event$.pipe(filter(isClickEvent))
-    );
     this._handleMouseMove(this._mouseMove.asObservable());
+  }
+
+  onEscapePressed() {
+    this.pgDeactivate.emit();
   }
 }

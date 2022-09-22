@@ -24,18 +24,19 @@ import {
 import { Entity, generateId, isNull, Option } from '../../shared/utils';
 
 export type Instruction = Entity<{
-  name: string;
+  data: { name: string };
 }>;
 
 export interface EditInstructionData {
   instruction: Option<Instruction>;
 }
 
-export type EditInstructionSubmit = Instruction;
+export type CreateInstructionSubmit = {
+  name: string;
+};
 
-export type CreateInstructionSubmit = Instruction & {
-  workspaceId: string;
-  applicationId: string;
+export type UpdateInstructionSubmit = {
+  name: string;
 };
 
 export const openEditInstructionModal = (
@@ -43,36 +44,30 @@ export const openEditInstructionModal = (
   data: EditInstructionData
 ) =>
   dialog.open<
-    EditInstructionSubmit,
+    CreateInstructionSubmit | UpdateInstructionSubmit,
     EditInstructionData,
     EditInstructionModalComponent
   >(EditInstructionModalComponent, {
     data,
   });
 
-@Directive({ selector: '[pgCreateInstructionModal]', standalone: true })
+@Directive({
+  selector: '[pgCreateInstructionModal]',
+  standalone: true,
+  exportAs: 'modal',
+})
 export class CreateInstructionModalDirective {
   private readonly _dialog = inject(Dialog);
-
-  @Input() pgWorkspaceId: Option<string> = null;
-  @Input() pgApplicationId: Option<string> = null;
 
   @Output() pgCreateInstruction = new EventEmitter<CreateInstructionSubmit>();
   @Output() pgOpenModal = new EventEmitter();
   @Output() pgCloseModal = new EventEmitter();
 
   @HostListener('click', []) onClick() {
-    if (isNull(this.pgWorkspaceId)) {
-      throw new Error('pgWorkspaceId is missing');
-    }
+    this.open();
+  }
 
-    if (isNull(this.pgApplicationId)) {
-      throw new Error('pgApplicationId is missing');
-    }
-
-    const workspaceId = this.pgWorkspaceId;
-    const applicationId = this.pgApplicationId;
-
+  open() {
     this.pgOpenModal.emit();
 
     openEditInstructionModal(this._dialog, {
@@ -81,27 +76,31 @@ export class CreateInstructionModalDirective {
       this.pgCloseModal.emit();
 
       if (instructionData !== undefined) {
-        this.pgCreateInstruction.emit({
-          ...instructionData,
-          workspaceId,
-          applicationId,
-        });
+        this.pgCreateInstruction.emit(instructionData);
       }
     });
   }
 }
 
-@Directive({ selector: '[pgUpdateInstructionModal]', standalone: true })
+@Directive({
+  selector: '[pgUpdateInstructionModal]',
+  standalone: true,
+  exportAs: 'modal',
+})
 export class UpdateInstructionModalDirective {
   private readonly _dialog = inject(Dialog);
 
   @Input() pgInstruction: Option<Instruction> = null;
 
-  @Output() pgUpdateInstruction = new EventEmitter<EditInstructionSubmit>();
+  @Output() pgUpdateInstruction = new EventEmitter<UpdateInstructionSubmit>();
   @Output() pgOpenModal = new EventEmitter();
   @Output() pgCloseModal = new EventEmitter();
 
   @HostListener('click', []) onClick() {
+    this.open();
+  }
+
+  open() {
     if (isNull(this.pgInstruction)) {
       throw new Error('pgInstruction is missing');
     }
@@ -142,30 +141,6 @@ export class UpdateInstructionModalDirective {
         class="overflow-y-auto max-h-[515px]"
       >
         <div class="mb-4">
-          <label class="block bp-font-game text-xl" for="instruction-id-input"
-            >Instruction ID</label
-          >
-          <div class="flex items-center justify-between w-full">
-            <input
-              class="bp-input-futuristic p-4 outline-0"
-              id="instruction-id-input"
-              type="text"
-              formControlName="id"
-              [readonly]="instruction !== null"
-            />
-            <button
-              *ngIf="instruction === null"
-              class="bp-button-generate-futuristic"
-              type="button"
-              (click)="idControl.setValue(onGenerateId())"
-            ></button>
-          </div>
-          <p class="bp-font-game text-sm" *ngIf="instruction === null">
-            Hint: The ID cannot be changed afterwards.
-          </p>
-        </div>
-
-        <div class="mb-4">
           <label
             class="block bp-font-game text-xl"
             for="instruction-name-input"
@@ -203,27 +178,22 @@ export class UpdateInstructionModalDirective {
 })
 export class EditInstructionModalComponent {
   private readonly _dialogRef =
-    inject<DialogRef<EditInstructionSubmit, EditInstructionModalComponent>>(
-      DialogRef
-    );
+    inject<
+      DialogRef<
+        CreateInstructionSubmit | UpdateInstructionSubmit,
+        EditInstructionModalComponent
+      >
+    >(DialogRef);
   private readonly _formBuilder = inject(FormBuilder);
   private readonly _data = inject<EditInstructionData>(DIALOG_DATA);
 
   readonly instruction = this._data.instruction;
   readonly form = this._formBuilder.group({
-    id: this._formBuilder.control<string>(this.instruction?.id ?? '', {
-      validators: [Validators.required],
-      nonNullable: true,
-    }),
-    name: this._formBuilder.control<string>(this.instruction?.name ?? '', {
+    name: this._formBuilder.control<string>(this.instruction?.data.name ?? '', {
       validators: [Validators.required],
       nonNullable: true,
     }),
   });
-
-  get idControl() {
-    return this.form.get('id') as FormControl<string>;
-  }
 
   get nameControl() {
     return this.form.get('name') as FormControl<string>;
@@ -231,11 +201,9 @@ export class EditInstructionModalComponent {
 
   onSubmit() {
     if (this.form.valid) {
-      const id = this.idControl.value;
       const name = this.nameControl.value;
 
       this._dialogRef.close({
-        id,
         name,
       });
     }

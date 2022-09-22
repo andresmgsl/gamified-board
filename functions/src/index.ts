@@ -7,6 +7,34 @@ const pubsub = new PubSub();
 admin.initializeApp();
 const firestore = admin.firestore();
 
+const getNodePath = (parentIds: string[], nodeId: string) => {
+  if (parentIds.length === 1) {
+    return `graphs/${parentIds[0]}/nodes/${nodeId}`;
+  } else {
+    const parentsPath = parentIds.reduce(
+      (path: string, parentId: string) => `${path}/${parentId}/nodes`,
+      `graphs`
+    );
+    return `${parentsPath}/${nodeId}`;
+  }
+};
+
+const getParentPath = (parentIds: string[]) => {
+  if (parentIds.length === 1) {
+    return `graphs/${parentIds[0]}`;
+  } else {
+    const parentsPath = parentIds
+      .slice(0, -1)
+      .reduce(
+        (path: string, parentId: string) => `${path}/${parentId}/nodes`,
+        `graphs`
+      );
+    const parentId = parentIds.at(-1);
+
+    return `${parentsPath}/${parentId}`;
+  }
+};
+
 export const publishEvent = functions.https.onCall(async (data, context) => {
   functions.logger.info('data', data);
 
@@ -34,13 +62,15 @@ export const persistEvent = functions.pubsub
       : null;
 
     const eventRef = firestore.doc(`events/${messageBody.id}`);
+    const { referenceIds, ...payload } = messageBody.data.payload;
+
     const event = {
-      payload: messageBody.data.payload,
+      payload,
       type: messageBody.data.type,
       clientId: messageBody.data.clientId,
-      graphIds: messageBody.data.graphIds ?? [],
       correlationId: messageBody.data.correlationId ?? null,
       createdAt: context.timestamp,
+      referenceIds: referenceIds ?? [],
     };
     await eventRef.set(event);
 
@@ -250,47 +280,46 @@ export const mutateGraphState = functions.pubsub
     });
   }); */
 
-export const createWorkspace = functions.pubsub
+export const createGraph = functions.pubsub
   .topic('events')
   .onPublish(async (message, context) => {
     if (
       process.env.FUNCTIONS_EMULATOR &&
-      message.attributes.type !== 'createWorkspace'
+      message.attributes.type !== 'createGraph'
     ) {
-      functions.logger.warn('createWorkspace', 'Event ignored');
+      functions.logger.warn('createGraph', 'Event ignored');
       return false;
     }
 
     const messageBody = message.data
       ? JSON.parse(Buffer.from(message.data, 'base64').toString())
       : null;
-    const workspaceRef = firestore.doc(`graphs/${messageBody.data.payload.id}`);
-    const workspace = {
-      ...messageBody.data.payload,
-      thumbnailUrl: 'assets/generic/workspace.png',
-    };
 
-    await workspaceRef.set({
-      ...workspace,
-      kind: 'workspace',
-      nodes: [],
-      edges: [],
-      lastEventId: messageBody.id,
-      createdAt: context.timestamp,
+    const { id: graphId, ...payload } = messageBody.data.payload;
+    const { kind, ...data } = payload;
+
+    await firestore.runTransaction(async (transaction) => {
+      const graphRef = firestore.doc(`graphs/${graphId}`);
+
+      transaction.set(graphRef, {
+        data,
+        kind,
+        lastEventId: messageBody.id,
+        createdAt: context.timestamp,
+      });
     });
 
     pubsub.topic('events').publishJSON(
       {
         id: context.eventId,
         data: {
-          payload: workspace,
-          type: 'createWorkspaceSuccess',
-          graphIds: [messageBody.data.payload.id],
+          payload: messageBody.data.payload,
+          type: 'createGraphSuccess',
           clientId: messageBody.data.clientId,
           correlationId: messageBody.id,
         },
       },
-      { type: 'createWorkspaceSuccess' },
+      { type: 'createGraphSuccess' },
       (error) => {
         functions.logger.error(error);
       }
@@ -299,14 +328,14 @@ export const createWorkspace = functions.pubsub
     return true;
   });
 
-export const createWorkspaceSuccess = functions.pubsub
+export const createGraphSuccess = functions.pubsub
   .topic('events')
   .onPublish(async (message, context) => {
     if (
       process.env.FUNCTIONS_EMULATOR &&
-      message.attributes.type !== 'createWorkspaceSuccess'
+      message.attributes.type !== 'createGraphSuccess'
     ) {
-      functions.logger.warn('createWorkspaceSuccess', 'Event ignored');
+      functions.logger.warn('createGraphSuccess', 'Event ignored');
       return false;
     }
 
@@ -314,9 +343,9 @@ export const createWorkspaceSuccess = functions.pubsub
       ? JSON.parse(Buffer.from(message.data, 'base64').toString())
       : null;
 
-    const workspaceRef = firestore.doc(`graphs/${messageBody.data.payload.id}`);
+    const graphRef = firestore.doc(`graphs/${messageBody.data.payload.id}`);
 
-    await workspaceRef.update({
+    await graphRef.update({
       lastEventId: messageBody.id,
       updatedAt: context.timestamp,
     });
@@ -324,43 +353,112 @@ export const createWorkspaceSuccess = functions.pubsub
     return true;
   });
 
-export const updateWorkspace = functions.pubsub
+export const updateGraph = functions.pubsub
   .topic('events')
   .onPublish(async (message, context) => {
     if (
       process.env.FUNCTIONS_EMULATOR &&
-      message.attributes.type !== 'updateWorkspace'
+      message.attributes.type !== 'updateGraph'
     ) {
-      functions.logger.warn('updateWorkspace', 'Event ignored');
+      functions.logger.warn('updateGraph', 'Event ignored');
       return false;
     }
 
     const messageBody = message.data
       ? JSON.parse(Buffer.from(message.data, 'base64').toString())
       : null;
-    const workspaceRef = firestore.doc(`graphs/${messageBody.data.payload.id}`);
 
-    await workspaceRef.update({
-      ...messageBody.data.payload.changes,
-      lastEventId: messageBody.id,
-      updatedAt: context.timestamp,
+    const { id: graphId, ...payload } = messageBody.data.payload;
+
+    await firestore.runTransaction(async (transaction) => {
+      const graphRef = firestore.doc(`graphs/${graphId}`);
+      const graph = await transaction.get(graphRef);
+      const graphData = graph.data();
+
+      transaction.update(graphRef, {
+        data: {
+          ...graphData?.['data'],
+          ...payload.changes,
+        },
+        lastEventId: messageBody.id,
+        updatedAt: context.timestamp,
+      });
     });
 
     pubsub.topic('events').publishJSON(
       {
         id: context.eventId,
+        data: {
+          payload: messageBody.data.payload,
+          type: 'updateGraphSuccess',
+          clientId: messageBody.data.clientId,
+          correlationId: messageBody.id,
+        },
+      },
+      { type: 'updateGraphSuccess' },
+      (error) => {
+        functions.logger.error(error);
+      }
+    );
+
+    return true;
+  });
+
+export const updateGraphThumbnail = functions.pubsub
+  .topic('events')
+  .onPublish(async (message, context) => {
+    if (
+      process.env.FUNCTIONS_EMULATOR &&
+      message.attributes.type !== 'updateGraphThumbnail'
+    ) {
+      functions.logger.warn('updateGraphThumbnail', 'Event ignored');
+      return false;
+    }
+
+    const messageBody = message.data
+      ? JSON.parse(Buffer.from(message.data, 'base64').toString())
+      : null;
+
+    const { id: graphId, ...payload } = messageBody.data.payload;
+
+    await firestore.runTransaction(async (transaction) => {
+      const uploadRef = firestore.doc(`uploads/${payload.fileId}`);
+      const graphRef = firestore.doc(`graphs/${graphId}`);
+      const graph = await transaction.get(graphRef);
+      const graphData = graph.data();
+
+      transaction.set(uploadRef, {
+        ref: graphId,
+        createdAt: context.timestamp,
+      });
+
+      transaction.update(graphRef, {
+        data: {
+          ...graphData?.['data'],
+          thumbnailUrl: payload.fileUrl,
+        },
+        lastEventId: context.eventId,
+        updatedAt: context.timestamp,
+      });
+    });
+
+    pubsub.topic('events').publishJSON(
+      {
+        id: messageBody.id,
         data: {
           payload: {
-            id: messageBody.data.payload.id,
-            changes: messageBody.data.payload.changes,
+            id: graphId,
+            changes: {
+              thumbnailUrl: payload.fileUrl,
+            },
+            referenceIds: payload.referenceIds,
           },
-          type: 'updateWorkspaceSuccess',
-          graphIds: [messageBody.data.payload.id],
+          type: 'updateGraphThumbnailSuccess',
           clientId: messageBody.data.clientId,
-          correlationId: messageBody.id,
+          correlationId: context.eventId,
         },
       },
-      { type: 'updateWorkspaceSuccess' },
+      { type: 'updateGraphThumbnailSuccess' },
       (error) => {
         functions.logger.error(error);
       }
@@ -369,14 +467,15 @@ export const updateWorkspace = functions.pubsub
     return true;
   });
 
-export const updateWorkspaceSuccess = functions.pubsub
+export const updateGraphSuccess = functions.pubsub
   .topic('events')
   .onPublish(async (message, context) => {
     if (
       process.env.FUNCTIONS_EMULATOR &&
-      message.attributes.type !== 'updateWorkspaceSuccess'
+      message.attributes.type !== 'updateGraphSuccess' &&
+      message.attributes.type !== 'updateGraphThumbnailSuccess'
     ) {
-      functions.logger.warn('updateWorkspaceSuccess', 'Event ignored');
+      functions.logger.warn('updateGraphSuccess', 'Event ignored');
       return false;
     }
 
@@ -384,9 +483,9 @@ export const updateWorkspaceSuccess = functions.pubsub
       ? JSON.parse(Buffer.from(message.data, 'base64').toString())
       : null;
 
-    const workspaceRef = firestore.doc(`graphs/${messageBody.data.payload.id}`);
+    const graphRef = firestore.doc(`graphs/${messageBody.data.payload.id}`);
 
-    await workspaceRef.update({
+    await graphRef.update({
       lastEventId: messageBody.id,
       updatedAt: context.timestamp,
     });
@@ -394,14 +493,14 @@ export const updateWorkspaceSuccess = functions.pubsub
     return true;
   });
 
-export const updateWorkspaceThumbnail = functions.pubsub
+export const deleteGraph = functions.pubsub
   .topic('events')
   .onPublish(async (message, context) => {
     if (
       process.env.FUNCTIONS_EMULATOR &&
-      message.attributes.type !== 'updateWorkspaceThumbnail'
+      message.attributes.type !== 'deleteGraph'
     ) {
-      functions.logger.warn('updateWorkspaceThumbnail', 'Event ignored');
+      functions.logger.warn('deleteGraph', 'Event ignored');
       return false;
     }
 
@@ -411,38 +510,20 @@ export const updateWorkspaceThumbnail = functions.pubsub
 
     await firestore.runTransaction(async (transaction) => {
       const graphRef = firestore.doc(`graphs/${messageBody.data.payload.id}`);
-      const uploadRef = firestore.doc(
-        `uploads/${messageBody.data.payload.fileId}`
-      );
-
-      transaction.set(uploadRef, {
-        kind: 'workspace',
-        ref: messageBody.data.payload.id,
-        createdAt: context.timestamp,
-      });
-      transaction.update(graphRef, {
-        thumbnailUrl: messageBody.data.payload.fileUrl,
-        lastEventId: messageBody.id,
-        updatedAt: context.timestamp,
-      });
+      transaction.delete(graphRef);
     });
 
     pubsub.topic('events').publishJSON(
       {
         id: context.eventId,
         data: {
-          payload: {
-            id: messageBody.data.payload.id,
-            fileId: messageBody.data.payload.fileId,
-            fileUrl: messageBody.data.payload.fileUrl,
-          },
-          type: 'updateWorkspaceThumbnailSuccess',
-          graphIds: [messageBody.data.payload.id],
+          payload: messageBody.data.payload,
+          type: 'deleteGraphSuccess',
           clientId: messageBody.data.clientId,
           correlationId: messageBody.id,
         },
       },
-      { type: 'updateWorkspaceThumbnailSuccess' },
+      { type: 'deleteGraphSuccess' },
       (error) => {
         functions.logger.error(error);
       }
@@ -451,38 +532,14 @@ export const updateWorkspaceThumbnail = functions.pubsub
     return true;
   });
 
-export const updateWorkspaceThumbnailSuccess = functions.pubsub
+export const createNode = functions.pubsub
   .topic('events')
   .onPublish(async (message, context) => {
     if (
       process.env.FUNCTIONS_EMULATOR &&
-      message.attributes.type !== 'updateWorkspaceThumbnailSuccess'
+      message.attributes.type !== 'createNode'
     ) {
-      functions.logger.warn('updateWorkspaceThumbnailSuccess', 'Event ignored');
-      return false;
-    }
-
-    const messageBody = message.data
-      ? JSON.parse(Buffer.from(message.data, 'base64').toString())
-      : null;
-    const workspaceRef = firestore.doc(`graphs/${messageBody.data.payload.id}`);
-
-    await workspaceRef.update({
-      lastEventId: messageBody.id,
-      updatedAt: context.timestamp,
-    });
-
-    return true;
-  });
-
-export const deleteWorkspace = functions.pubsub
-  .topic('events')
-  .onPublish(async (message, context) => {
-    if (
-      process.env.FUNCTIONS_EMULATOR &&
-      message.attributes.type !== 'deleteWorkspace'
-    ) {
-      functions.logger.warn('deleteWorkspace', 'Event ignored');
+      functions.logger.warn('createNode', 'Event ignored');
       return false;
     }
 
@@ -490,331 +547,190 @@ export const deleteWorkspace = functions.pubsub
       ? JSON.parse(Buffer.from(message.data, 'base64').toString())
       : null;
 
-    const workspaceRef = firestore.doc(`graphs/${messageBody.data.payload.id}`);
-
-    await workspaceRef.delete();
-
-    pubsub.topic('events').publishJSON(
-      {
-        id: context.eventId,
-        data: {
-          payload: null,
-          type: 'deleteWorkspaceSuccess',
-          graphIds: [messageBody.data.payload.id],
-          clientId: messageBody.data.clientId,
-          correlationId: messageBody.id,
-        },
-      },
-      { type: 'deleteWorkspaceSuccess' },
-      (error) => {
-        functions.logger.error(error);
-      }
-    );
-
-    return true;
-  });
-
-export const createApplication = functions.pubsub
-  .topic('events')
-  .onPublish(async (message, context) => {
-    if (
-      process.env.FUNCTIONS_EMULATOR &&
-      message.attributes.type !== 'createApplication'
-    ) {
-      functions.logger.warn('createApplication', 'Event ignored');
-      return false;
-    }
-
-    const messageBody = message.data
-      ? JSON.parse(Buffer.from(message.data, 'base64').toString())
-      : null;
-    const workspaceRef = firestore.doc(
-      `graphs/${messageBody.data.payload.workspaceId}`
-    );
-    const applicationRef = firestore.doc(
-      `graphs/${messageBody.data.payload.id}`
-    );
+    const {
+      id: nodeId,
+      parentIds,
+      graphId,
+      referenceIds,
+      ...payload
+    } = messageBody.data.payload;
+    const { kind, ...data } = payload;
 
     await firestore.runTransaction(async (transaction) => {
-      const workspace = await transaction.get(workspaceRef);
-      const workspaceData = workspace.data();
-      const nodes = workspaceData?.['nodes'] ?? [];
+      const nodeRef = firestore.doc(getNodePath(parentIds, nodeId));
 
-      transaction.update(workspaceRef, {
-        nodes: [
-          ...nodes,
-          {
-            ...messageBody.data.payload,
-            thumbnailUrl: 'assets/generic/application.png',
-            createdAt: context.timestamp,
-          },
-        ],
+      transaction.set(nodeRef, {
+        id: nodeId,
+        data,
+        kind,
+        createdAt: context.timestamp,
+        lastEventId: messageBody.id,
+      });
+    });
+
+    pubsub.topic('events').publishJSON(
+      {
+        id: context.eventId,
+        data: {
+          payload: messageBody.data.payload,
+          type: 'createNodeSuccess',
+          clientId: messageBody.data.clientId,
+          correlationId: messageBody.id,
+        },
+      },
+      { type: 'createNodeSuccess' },
+      (error) => {
+        functions.logger.error(error);
+      }
+    );
+
+    return true;
+  });
+
+export const createNodeSuccess = functions.pubsub
+  .topic('events')
+  .onPublish(async (message, context) => {
+    if (
+      process.env.FUNCTIONS_EMULATOR &&
+      message.attributes.type !== 'createNodeSuccess'
+    ) {
+      functions.logger.warn('createNodeSuccess', 'Event ignored');
+      return false;
+    }
+
+    const messageBody = message.data
+      ? JSON.parse(Buffer.from(message.data, 'base64').toString())
+      : null;
+
+    const { id: nodeId, parentIds } = messageBody.data.payload;
+
+    const parentRef = firestore.doc(getParentPath(parentIds));
+
+    await parentRef.update({
+      lastEventId: messageBody.id,
+      updatedAt: context.timestamp,
+    });
+
+    const nodeRef = firestore.doc(getNodePath(parentIds, nodeId));
+
+    await nodeRef.update({
+      lastEventId: messageBody.id,
+      updatedAt: context.timestamp,
+    });
+
+    return true;
+  });
+
+export const updateNode = functions.pubsub
+  .topic('events')
+  .onPublish(async (message, context) => {
+    if (
+      process.env.FUNCTIONS_EMULATOR &&
+      message.attributes.type !== 'updateNode'
+    ) {
+      functions.logger.warn('updateNode', 'Event ignored');
+      return false;
+    }
+
+    const messageBody = message.data
+      ? JSON.parse(Buffer.from(message.data, 'base64').toString())
+      : null;
+
+    const { id: nodeId, parentIds, ...payload } = messageBody.data.payload;
+
+    await firestore.runTransaction(async (transaction) => {
+      const nodeRef = firestore.doc(getNodePath(parentIds, nodeId));
+      const node = await transaction.get(nodeRef);
+      const nodeData = node.data();
+
+      transaction.update(nodeRef, {
+        data: {
+          ...nodeData?.['data'],
+          ...payload.changes,
+        },
         lastEventId: messageBody.id,
         updatedAt: context.timestamp,
       });
+    });
 
-      transaction.set(applicationRef, {
-        ...messageBody.data.payload,
-        thumbnailUrl: 'assets/generic/application.png',
-        nodes: [],
-        edges: [],
-        lastEventId: messageBody.id,
+    pubsub.topic('events').publishJSON(
+      {
+        id: context.eventId,
+        data: {
+          payload: messageBody.data.payload,
+          type: 'updateNodeSuccess',
+          clientId: messageBody.data.clientId,
+          correlationId: messageBody.id,
+        },
+      },
+      { type: 'updateNodeSuccess' },
+      (error) => {
+        functions.logger.error(error);
+      }
+    );
+
+    return true;
+  });
+
+export const updateNodeThumbnail = functions.pubsub
+  .topic('events')
+  .onPublish(async (message, context) => {
+    if (
+      process.env.FUNCTIONS_EMULATOR &&
+      message.attributes.type !== 'updateNodeThumbnail'
+    ) {
+      functions.logger.warn('updateNodeThumbnail', 'Event ignored');
+      return false;
+    }
+
+    const messageBody = message.data
+      ? JSON.parse(Buffer.from(message.data, 'base64').toString())
+      : null;
+
+    const { id: nodeId, parentIds, ...payload } = messageBody.data.payload;
+
+    await firestore.runTransaction(async (transaction) => {
+      const uploadRef = firestore.doc(`uploads/${payload.fileId}`);
+      const nodeRef = firestore.doc(getNodePath(parentIds, nodeId));
+      const node = await transaction.get(nodeRef);
+      const nodeData = node.data();
+
+      // Save the upload for tracking purposes
+      transaction.set(uploadRef, {
+        ref: nodeId,
         createdAt: context.timestamp,
       });
-    });
 
-    pubsub.topic('events').publishJSON(
-      {
-        id: context.eventId,
+      transaction.update(nodeRef, {
         data: {
-          payload: {
-            ...messageBody.data.payload,
-            thumbnailUrl: 'assets/generic/application.png',
-            nodes: [],
-            edges: [],
-          },
-          type: 'createApplicationSuccess',
-          graphIds: [
-            messageBody.data.payload.id,
-            messageBody.data.payload.workspaceId,
-          ],
-          clientId: messageBody.data.clientId,
-          correlationId: messageBody.id,
+          ...nodeData?.['data'],
+          thumbnailUrl: payload.fileUrl,
         },
-      },
-      { type: 'createApplicationSuccess' },
-      (error) => {
-        functions.logger.error(error);
-      }
-    );
-
-    return true;
-  });
-
-export const createApplicationSuccess = functions.pubsub
-  .topic('events')
-  .onPublish(async (message, context) => {
-    if (
-      process.env.FUNCTIONS_EMULATOR &&
-      message.attributes.type !== 'createApplicationSuccess'
-    ) {
-      functions.logger.warn('createApplicationSuccess', 'Event ignored');
-      return false;
-    }
-
-    const messageBody = message.data
-      ? JSON.parse(Buffer.from(message.data, 'base64').toString())
-      : null;
-
-    const workspaceRef = firestore.doc(
-      `graphs/${messageBody.data.payload.workspaceId}`
-    );
-    const applicationRef = firestore.doc(
-      `graphs/${messageBody.data.payload.id}`
-    );
-
-    await workspaceRef.update({
-      lastEventId: messageBody.id,
-      updatedAt: context.timestamp,
+        lastEventId: context.eventId,
+        updatedAt: context.timestamp,
+      });
     });
-    await applicationRef.update({
-      lastEventId: messageBody.id,
-      updatedAt: context.timestamp,
-    });
-
-    return true;
-  });
-
-export const updateApplication = functions.pubsub
-  .topic('events')
-  .onPublish(async (message, context) => {
-    if (
-      process.env.FUNCTIONS_EMULATOR &&
-      message.attributes.type !== 'updateApplication'
-    ) {
-      functions.logger.warn('updateApplication', 'Event ignored');
-      return false;
-    }
-
-    const messageBody = message.data
-      ? JSON.parse(Buffer.from(message.data, 'base64').toString())
-      : null;
-    const applicationRef = firestore.doc(
-      `graphs/${messageBody.data.payload.id}`
-    );
-
-    const { workspaceId } = await firestore.runTransaction(
-      async (transaction) => {
-        const application = await transaction.get(applicationRef);
-        const applicationData = application.data();
-        const workspaceId = applicationData?.['workspaceId'];
-        const workspaceRef = firestore.doc(`graphs/${workspaceId}`);
-        const workspace = await transaction.get(workspaceRef);
-        const workspaceData = workspace.data();
-        const nodes: { id: string }[] = workspaceData?.['nodes'] ?? [];
-        const nodeIndex = nodes.findIndex(
-          (node) => node.id === messageBody.data.payload.id
-        );
-
-        transaction.update(workspaceRef, {
-          nodes: [
-            ...nodes.slice(0, nodeIndex),
-            {
-              ...nodes[nodeIndex],
-              ...messageBody.data.payload.changes,
-            },
-            ...nodes.slice(nodeIndex + 1),
-          ],
-          lastEventId: messageBody.id,
-          updatedAt: context.timestamp,
-        });
-
-        transaction.update(applicationRef, {
-          ...messageBody.data.payload.changes,
-          lastEventId: messageBody.id,
-          updatedAt: context.timestamp,
-        });
-
-        return { workspaceId };
-      }
-    );
-
-    pubsub.topic('events').publishJSON(
-      {
-        id: context.eventId,
-        data: {
-          payload: {
-            id: messageBody.data.payload.id,
-            changes: messageBody.data.payload.changes,
-            workspaceId,
-          },
-          type: 'updateApplicationSuccess',
-          graphIds: [messageBody.data.payload.id, workspaceId],
-          clientId: messageBody.data.clientId,
-          correlationId: messageBody.id,
-        },
-      },
-      { type: 'updateApplicationSuccess' },
-      (error) => {
-        functions.logger.error(error);
-      }
-    );
-
-    return true;
-  });
-
-export const updateApplicationSuccess = functions.pubsub
-  .topic('events')
-  .onPublish(async (message, context) => {
-    if (
-      process.env.FUNCTIONS_EMULATOR &&
-      message.attributes.type !== 'updateApplicationSuccess'
-    ) {
-      functions.logger.warn('updateApplicationSuccess', 'Event ignored');
-      return false;
-    }
-
-    const messageBody = message.data
-      ? JSON.parse(Buffer.from(message.data, 'base64').toString())
-      : null;
-
-    const workspaceRef = firestore.doc(
-      `graphs/${messageBody.data.payload.workspaceId}`
-    );
-    const applicationRef = firestore.doc(
-      `graphs/${messageBody.data.payload.id}`
-    );
-
-    await workspaceRef.update({
-      lastEventId: messageBody.id,
-      updatedAt: context.timestamp,
-    });
-    await applicationRef.update({
-      lastEventId: messageBody.id,
-      updatedAt: context.timestamp,
-    });
-
-    return true;
-  });
-
-export const updateApplicationThumbnail = functions.pubsub
-  .topic('events')
-  .onPublish(async (message, context) => {
-    if (
-      process.env.FUNCTIONS_EMULATOR &&
-      message.attributes.type !== 'updateApplicationThumbnail'
-    ) {
-      functions.logger.warn('updateApplicationThumbnail', 'Event ignored');
-      return false;
-    }
-
-    const messageBody = message.data
-      ? JSON.parse(Buffer.from(message.data, 'base64').toString())
-      : null;
-    const applicationRef = firestore.doc(
-      `graphs/${messageBody.data.payload.id}`
-    );
-    const uploadRef = firestore.doc(
-      `uploads/${messageBody.data.payload.fileId}`
-    );
-
-    const { workspaceId } = await firestore.runTransaction(
-      async (transaction) => {
-        const application = await transaction.get(applicationRef);
-        const applicationData = application.data();
-        const workspaceId = applicationData?.['workspaceId'];
-        const workspaceRef = firestore.doc(`graphs/${workspaceId}`);
-        const workspace = await transaction.get(workspaceRef);
-        const workspaceData = workspace.data();
-        const nodes: { id: string }[] = workspaceData?.['nodes'] ?? [];
-        const nodeIndex = nodes.findIndex(
-          (node) => node.id === messageBody.data.payload.id
-        );
-
-        transaction.set(uploadRef, {
-          kind: 'application',
-          ref: messageBody.data.payload.id,
-          createdAt: context.timestamp,
-        });
-        transaction.update(workspaceRef, {
-          nodes: [
-            ...nodes.slice(0, nodeIndex),
-            {
-              ...nodes[nodeIndex],
-              thumbnailUrl: messageBody.data.payload.fileUrl,
-            },
-            ...nodes.slice(nodeIndex + 1),
-          ],
-          lastEventId: context.eventId,
-          updatedAt: context.timestamp,
-        });
-        transaction.update(applicationRef, {
-          thumbnailUrl: messageBody.data.payload.fileUrl,
-          lastEventId: context.eventId,
-          updatedAt: context.timestamp,
-        });
-
-        return { workspaceId };
-      }
-    );
 
     pubsub.topic('events').publishJSON(
       {
         id: messageBody.id,
         data: {
           payload: {
-            fileId: messageBody.data.payload.fileId,
-            fileUrl: messageBody.data.payload.fileUrl,
             id: messageBody.data.payload.id,
-            workspaceId,
+            changes: {
+              thumbnailUrl: messageBody.data.payload.fileUrl,
+            },
+            kind: messageBody.data.kind,
+            parentIds,
+            referenceIds: messageBody.data.payload.referenceIds,
+            graphId: messageBody.data.payload.graphId,
           },
-          type: 'updateApplicationThumbnailSuccess',
-          graphIds: [messageBody.data.payload.id, workspaceId],
+          type: 'updateNodeThumbnailSuccess',
           clientId: messageBody.data.clientId,
           correlationId: context.eventId,
         },
       },
-      { type: 'updateApplicationThumbnailSuccess' },
+      { type: 'updateNodeThumbnailSuccess' },
       (error) => {
         functions.logger.error(error);
       }
@@ -823,17 +739,15 @@ export const updateApplicationThumbnail = functions.pubsub
     return true;
   });
 
-export const updateApplicationThumbnailSuccess = functions.pubsub
+export const updateNodeSuccess = functions.pubsub
   .topic('events')
   .onPublish(async (message, context) => {
     if (
       process.env.FUNCTIONS_EMULATOR &&
-      message.attributes.type !== 'updateApplicationThumbnailSuccess'
+      message.attributes.type !== 'updateNodeSuccess' &&
+      message.attributes.type !== 'updateNodeThumbnailSuccess'
     ) {
-      functions.logger.warn(
-        'updateApplicationThumbnailSuccess',
-        'Event ignored'
-      );
+      functions.logger.warn('updateNodeSuccess', 'Event ignored');
       return false;
     }
 
@@ -841,18 +755,18 @@ export const updateApplicationThumbnailSuccess = functions.pubsub
       ? JSON.parse(Buffer.from(message.data, 'base64').toString())
       : null;
 
-    const workspaceRef = firestore.doc(
-      `graphs/${messageBody.data.payload.workspaceId}`
-    );
-    const applicationRef = firestore.doc(
-      `graphs/${messageBody.data.payload.id}`
-    );
+    const { id: nodeId, parentIds } = messageBody.data.payload;
 
-    await workspaceRef.update({
+    const parentRef = firestore.doc(getParentPath(parentIds));
+
+    await parentRef.update({
       lastEventId: messageBody.id,
       updatedAt: context.timestamp,
     });
-    await applicationRef.update({
+
+    const nodeRef = firestore.doc(getNodePath(parentIds, nodeId));
+
+    await nodeRef.update({
       lastEventId: messageBody.id,
       updatedAt: context.timestamp,
     });
@@ -860,60 +774,40 @@ export const updateApplicationThumbnailSuccess = functions.pubsub
     return true;
   });
 
-export const deleteApplication = functions.pubsub
+export const deleteNode = functions.pubsub
   .topic('events')
   .onPublish(async (message, context) => {
     if (
       process.env.FUNCTIONS_EMULATOR &&
-      message.attributes.type !== 'deleteApplication'
+      message.attributes.type !== 'deleteNode'
     ) {
-      functions.logger.warn('deleteApplication', 'Event ignored');
+      functions.logger.warn('deleteNode', 'Event ignored');
       return false;
     }
 
     const messageBody = message.data
       ? JSON.parse(Buffer.from(message.data, 'base64').toString())
       : null;
-    const applicationRef = firestore.doc(
-      `graphs/${messageBody.data.payload.id}`
-    );
 
-    const { workspaceId } = await firestore.runTransaction(
-      async (transaction) => {
-        const application = await transaction.get(applicationRef);
-        const applicationData = application.data();
-        const workspaceId = applicationData?.['workspaceId'];
-        const workspaceRef = firestore.doc(`graphs/${workspaceId}`);
-        const workspace = await transaction.get(workspaceRef);
-        const workspaceData = workspace.data();
-        const nodes: { id: string }[] = workspaceData?.['nodes'] ?? [];
+    const { id: nodeId, parentIds } = messageBody.data.payload;
 
-        transaction.update(workspaceRef, {
-          nodes: nodes.filter((node) => {
-            return node.id !== messageBody.data.payload.id;
-          }),
-          lastEventId: messageBody.id,
-          updatedAt: context.timestamp,
-        });
+    await firestore.runTransaction(async (transaction) => {
+      const nodeRef = firestore.doc(getNodePath(parentIds, nodeId));
 
-        transaction.delete(applicationRef);
-
-        return { workspaceId };
-      }
-    );
+      transaction.delete(nodeRef);
+    });
 
     pubsub.topic('events').publishJSON(
       {
         id: context.eventId,
         data: {
-          payload: { id: messageBody.data.payload.id, workspaceId },
-          type: 'deleteApplicationSuccess',
-          graphIds: [messageBody.data.payload.id, workspaceId],
+          payload: messageBody.data.payload,
+          type: 'deleteNodeSuccess',
           clientId: messageBody.data.clientId,
           correlationId: messageBody.id,
         },
       },
-      { type: 'deleteApplicationSuccess' },
+      { type: 'deleteNodeSuccess' },
       (error) => {
         functions.logger.error(error);
       }
@@ -922,14 +816,14 @@ export const deleteApplication = functions.pubsub
     return true;
   });
 
-export const deleteApplicationSuccess = functions.pubsub
+export const deleteNodeSuccess = functions.pubsub
   .topic('events')
   .onPublish(async (message, context) => {
     if (
       process.env.FUNCTIONS_EMULATOR &&
-      message.attributes.type !== 'deleteApplicationSuccess'
+      message.attributes.type !== 'deleteNodeSuccess'
     ) {
-      functions.logger.warn('deleteApplicationSuccess', 'Event ignored');
+      functions.logger.warn('deleteNodeSuccess', 'Event ignored');
       return false;
     }
 
@@ -937,11 +831,11 @@ export const deleteApplicationSuccess = functions.pubsub
       ? JSON.parse(Buffer.from(message.data, 'base64').toString())
       : null;
 
-    const workspaceRef = firestore.doc(
-      `graphs/${messageBody.data.payload.workspaceId}`
-    );
+    const { parentIds } = messageBody.data.payload;
 
-    await workspaceRef.update({
+    const parentRef = firestore.doc(getParentPath(parentIds));
+
+    await parentRef.update({
       lastEventId: messageBody.id,
       updatedAt: context.timestamp,
     });
