@@ -39,8 +39,8 @@ import {
   isUpdateNodeSuccessEvent,
   isUpdateNodeThumbnailSuccessEvent,
   isViewNodeEvent,
-  Node,
   OneTapNodeEvent,
+  patchNode,
   UpdateGraphSuccessEvent,
   UpdateGraphThumbnailSuccessEvent,
   UpdateNodeSuccessEvent,
@@ -54,26 +54,40 @@ import {
 import { isNotNull, isNull, Option } from '../../shared/utils';
 import {
   ActiveCollectionComponent,
+  ActiveFieldComponent,
   ActiveInstructionComponent,
   AddCollectionNodeDto,
+  AddFieldNodeDto,
   AddInstructionNodeDto,
   ApplicationDockComponent,
   CollectionDockComponent,
+  FieldDockComponent,
   InstructionDockComponent,
   RightDockComponent,
 } from '../sections';
 import { ApplicationGraphApiService } from '../services';
 import { ApplicationDrawerStore } from '../stores';
-import { ApplicationGraphData, ApplicationNodeData } from '../utils';
+import {
+  ApplicationGraphData,
+  ApplicationGraphKind,
+  ApplicationNode,
+  ApplicationNodeData,
+  ApplicationNodeKinds,
+  ApplicationNodesData,
+  PartialApplicationNode,
+} from '../utils';
+import { applicationNodeLabelFunction } from '../utils/methods';
 
 interface ViewModel {
+  isCreatingField: boolean;
   isCreatingCollection: boolean;
   isCreatingInstruction: boolean;
   applicationId: Option<string>;
-  selected: Option<Node<ApplicationNodeData>>;
+  selected: Option<ApplicationNode>;
 }
 
 const initialState: ViewModel = {
+  isCreatingField: false,
   isCreatingCollection: false,
   isCreatingInstruction: false,
   applicationId: null,
@@ -115,7 +129,7 @@ const initialState: ViewModel = {
         *ngIf="selected.kind === 'collection'"
         class="fixed bottom-0 -translate-x-1/2 left-1/2"
         [pgCollection]="selected"
-        (pgCollectionUnselected)="onCollectionUnselected()"
+        (pgCollectionUnselected)="onUnselect()"
         (pgUpdateCollection)="
           onUpdateNode($event.id, 'collection', $event.changes)
         "
@@ -129,7 +143,7 @@ const initialState: ViewModel = {
         *ngIf="selected.kind === 'instruction'"
         class="fixed bottom-0 -translate-x-1/2 left-1/2"
         [pgInstruction]="selected"
-        (pgInstructionUnselected)="onInstructionUnselected()"
+        (pgInstructionUnselected)="onUnselect()"
         (pgUpdateInstruction)="
           onUpdateNode($event.id, 'instruction', $event.changes)
         "
@@ -138,9 +152,24 @@ const initialState: ViewModel = {
         "
         (pgDeleteInstruction)="onRemoveNode($event)"
       ></pg-instruction-dock>
+
+      <pg-field-dock
+        *ngIf="selected.kind === 'field'"
+        class="fixed bottom-0 -translate-x-1/2 left-1/2"
+        [pgField]="selected"
+        (pgFieldUnselected)="onUnselect()"
+        (pgUpdateField)="onUpdateNode($event.id, 'field', $event.changes)"
+        (pgUpdateFieldThumbnail)="
+          onUpdateNodeThumbnail($event.id, $event.fileId, $event.fileUrl)
+        "
+        (pgDeleteField)="onRemoveNode($event)"
+      ></pg-field-dock>
     </ng-container>
 
-    <pg-right-dock class="fixed bottom-0 right-0"></pg-right-dock>
+    <pg-right-dock
+      class="fixed bottom-0 right-0"
+      (pgActivateField)="onActivateField()"
+    ></pg-right-dock>
 
     <pg-active-collection
       *ngIf="application$ | ngrxPush as application"
@@ -151,7 +180,11 @@ const initialState: ViewModel = {
       "
       [pgClickEvent]="(drawerClick$ | ngrxPush) ?? null"
       (pgAddNode)="
-        onAddNode(application.data.workspaceId, application.id, $event)
+        onAddCollectionNode(
+          application.data.workspaceId,
+          application.id,
+          $event
+        )
       "
       (pgDeactivate)="onDeactivateCollection()"
     ></pg-active-collection>
@@ -165,10 +198,28 @@ const initialState: ViewModel = {
       "
       [pgClickEvent]="(drawerClick$ | ngrxPush) ?? null"
       (pgAddNode)="
-        onAddNode(application.data.workspaceId, application.id, $event)
+        onAddInstructionNode(
+          application.data.workspaceId,
+          application.id,
+          $event
+        )
       "
       (pgDeactivate)="onDeactivateInstruction()"
     ></pg-active-instruction>
+
+    <pg-active-field
+      *ngIf="application$ | ngrxPush as application"
+      [pgActive]="
+        (isCreatingField$ | ngrxPush)
+          ? { thumbnailUrl: 'assets/generic/field.png' }
+          : null
+      "
+      [pgClickEvent]="(drawerClick$ | ngrxPush) ?? null"
+      (pgAddNode)="
+        onAddFieldNode(application.data.workspaceId, application.id, $event)
+      "
+      (pgDeactivate)="onDeactivateField()"
+    ></pg-active-field>
   `,
   standalone: true,
   imports: [
@@ -178,9 +229,11 @@ const initialState: ViewModel = {
     ApplicationDockComponent,
     CollectionDockComponent,
     InstructionDockComponent,
+    FieldDockComponent,
     RightDockComponent,
     ActiveCollectionComponent,
     ActiveInstructionComponent,
+    ActiveFieldComponent,
     BackgroundImageZoomDirective,
     BackgroundImageMoveDirective,
   ],
@@ -197,6 +250,9 @@ export class ApplicationPageComponent
   private readonly _activatedRoute = inject(ActivatedRoute);
   private readonly _applicationDrawerStore = inject(ApplicationDrawerStore);
 
+  readonly isCreatingField$ = this.select(
+    ({ isCreatingField }) => isCreatingField
+  );
   readonly isCreatingCollection$ = this.select(
     ({ isCreatingCollection }) => isCreatingCollection
   );
@@ -221,25 +277,22 @@ export class ApplicationPageComponent
   @ViewChild('drawerElement')
   pgDrawerElementRef: ElementRef<HTMLElement> | null = null;
 
-  private patchSelected = this.updater<{
-    id: string;
-    changes: Partial<ApplicationGraphData>;
-  }>((state, { id, changes }) => {
-    if (isNull(state.selected) || state.selected.id !== id) {
-      return state;
-    }
+  private patchSelected = this.updater<PartialApplicationNode>(
+    (state, payload) => {
+      if (
+        isNull(state.selected) ||
+        state.selected.id !== payload.id ||
+        state.selected.kind === payload.kind
+      ) {
+        return state;
+      }
 
-    return {
-      ...state,
-      selected: {
-        ...state.selected,
-        data: {
-          ...state.selected.data,
-          ...changes,
-        },
-      },
-    };
-  });
+      return {
+        ...state,
+        selected: patchNode(state.selected, payload.data),
+      };
+    }
+  );
 
   private clearSelected = this.updater<string>((state, id) => {
     if (isNull(state.selected) || state.selected.id !== id) {
@@ -252,12 +305,16 @@ export class ApplicationPageComponent
     };
   });
 
-  readonly setSelected = this.updater<OneTapNodeEvent<ApplicationNodeData>>(
-    (state, event) => ({
-      ...state,
-      selected: event.payload,
-    })
-  );
+  readonly setSelected = this.updater<
+    OneTapNodeEvent<
+      ApplicationNodeKinds,
+      ApplicationNodeData,
+      ApplicationNodesData
+    >
+  >((state, event) => ({
+    ...state,
+    selected: event.payload,
+  }));
 
   private readonly _handleViewNode = this.effect<ViewNodeEvent>(
     concatMap((event) =>
@@ -278,7 +335,7 @@ export class ApplicationPageComponent
   );
 
   private readonly _handleUpdateGraphSuccess = this.effect<
-    UpdateGraphSuccessEvent<ApplicationGraphData>
+    UpdateGraphSuccessEvent<ApplicationGraphKind, ApplicationGraphData>
   >(
     concatMap((event) =>
       of(null).pipe(
@@ -304,35 +361,40 @@ export class ApplicationPageComponent
     )
   );
 
-  private readonly _handleUpdateGraphThumbnailSuccess =
-    this.effect<UpdateGraphThumbnailSuccessEvent>(
-      concatMap((event) =>
-        of(null).pipe(
-          withLatestFrom(this.workspaceId$, this.applicationId$),
-          concatMap(([, workspaceId, applicationId]) => {
-            if (isNull(workspaceId) || isNull(applicationId)) {
-              return EMPTY;
-            }
+  private readonly _handleUpdateGraphThumbnailSuccess = this.effect<
+    UpdateGraphThumbnailSuccessEvent<ApplicationGraphKind>
+  >(
+    concatMap((event) =>
+      of(null).pipe(
+        withLatestFrom(this.workspaceId$, this.applicationId$),
+        concatMap(([, workspaceId, applicationId]) => {
+          if (isNull(workspaceId) || isNull(applicationId)) {
+            return EMPTY;
+          }
 
-            return this._applicationGraphApiService.updateNodeThumbnail(
-              environment.clientId,
-              applicationId,
-              {
-                fileId: event.payload.fileId,
-                fileUrl: event.payload.fileUrl,
-                kind: event.payload.kind,
-                referenceIds: [workspaceId, applicationId],
-                graphId: workspaceId,
-                parentIds: [workspaceId],
-              }
-            );
-          })
-        )
+          return this._applicationGraphApiService.updateNodeThumbnail(
+            environment.clientId,
+            applicationId,
+            {
+              fileId: event.payload.fileId,
+              fileUrl: event.payload.fileUrl,
+              kind: event.payload.kind,
+              referenceIds: [workspaceId, applicationId],
+              graphId: workspaceId,
+              parentIds: [workspaceId],
+            }
+          );
+        })
       )
-    );
+    )
+  );
 
   private readonly _handleAddNodeSuccess = this.effect<
-    AddNodeSuccessEvent<ApplicationNodeData>
+    AddNodeSuccessEvent<
+      ApplicationNodeKinds,
+      ApplicationNodeData,
+      ApplicationNodesData
+    >
   >(
     concatMap((event) =>
       of(null).pipe(
@@ -359,7 +421,11 @@ export class ApplicationPageComponent
   );
 
   private readonly _handleUpdateNodeSuccess = this.effect<
-    UpdateNodeSuccessEvent<ApplicationNodeData>
+    UpdateNodeSuccessEvent<
+      ApplicationNodeKinds,
+      ApplicationNodeData,
+      ApplicationNodesData
+    >
   >(
     concatMap((event) =>
       of(null).pipe(
@@ -369,16 +435,15 @@ export class ApplicationPageComponent
             return EMPTY;
           }
 
-          this.patchSelected({
-            id: event.payload.id,
-            changes: event.payload.changes,
-          });
+          console.log(event);
+
+          this.patchSelected(event.payload);
 
           return this._applicationGraphApiService.updateNode(
             environment.clientId,
             event.payload.id,
             {
-              changes: event.payload.changes,
+              changes: event.payload.data,
               graphId: applicationId,
               parentIds: [workspaceId, applicationId],
               referenceIds: [applicationId, event.payload.id],
@@ -390,39 +455,41 @@ export class ApplicationPageComponent
     )
   );
 
-  private readonly _handleUpdateNodeThumbnailSuccess =
-    this.effect<UpdateNodeThumbnailSuccessEvent>(
-      concatMap((event) =>
-        of(null).pipe(
-          withLatestFrom(this.workspaceId$, this.applicationId$),
-          concatMap(([, workspaceId, applicationId]) => {
-            if (isNull(workspaceId) || isNull(applicationId)) {
-              return EMPTY;
+  private readonly _handleUpdateNodeThumbnailSuccess = this.effect<
+    UpdateNodeThumbnailSuccessEvent<ApplicationNodeKinds>
+  >(
+    concatMap((event) =>
+      of(null).pipe(
+        withLatestFrom(this.workspaceId$, this.applicationId$),
+        concatMap(([, workspaceId, applicationId]) => {
+          if (isNull(workspaceId) || isNull(applicationId)) {
+            return EMPTY;
+          }
+
+          this.patchSelected({
+            id: event.payload.id,
+            kind: event.payload.kind,
+            data: {
+              thumbnailUrl: event.payload.fileUrl,
+            },
+          });
+
+          return this._applicationGraphApiService.updateNodeThumbnail(
+            environment.clientId,
+            event.payload.id,
+            {
+              fileId: event.payload.fileId,
+              fileUrl: event.payload.fileUrl,
+              graphId: applicationId,
+              parentIds: [workspaceId, applicationId],
+              referenceIds: [applicationId, event.payload.id],
+              kind: event.payload.kind,
             }
-
-            this.patchSelected({
-              id: event.payload.id,
-              changes: {
-                thumbnailUrl: event.payload.fileUrl,
-              },
-            });
-
-            return this._applicationGraphApiService.updateNodeThumbnail(
-              environment.clientId,
-              event.payload.id,
-              {
-                fileId: event.payload.fileId,
-                fileUrl: event.payload.fileUrl,
-                graphId: applicationId,
-                parentIds: [workspaceId, applicationId],
-                referenceIds: [applicationId, event.payload.id],
-                kind: event.payload.kind,
-              }
-            );
-          })
-        )
+          );
+        })
       )
-    );
+    )
+  );
 
   private readonly _handleDeleteNodeSuccess =
     this.effect<DeleteNodeSuccessEvent>(
@@ -541,7 +608,8 @@ export class ApplicationPageComponent
           tap((event) => {
             this.patchSelected({
               id: event['payload'].id,
-              changes: event['payload'].changes,
+              data: event['payload'].changes,
+              kind: event['payload'].kind,
             });
 
             if (event['clientId'] !== environment.clientId) {
@@ -606,7 +674,13 @@ export class ApplicationPageComponent
         ).pipe(
           tap((graph) => {
             if (graph) {
-              const drawer = new Drawer(graph, [], drawerElement);
+              const drawer = new Drawer(
+                graph,
+                graph.nodes,
+                [],
+                drawerElement,
+                applicationNodeLabelFunction
+              );
               drawer.initialize();
               this._applicationDrawerStore.setDrawer(drawer);
 
@@ -655,9 +729,7 @@ export class ApplicationPageComponent
       this._applicationDrawerStore.event$.pipe(filter(isDeleteNodeSuccessEvent))
     );
     this.setSelected(
-      this._applicationDrawerStore.event$.pipe(
-        filter(isOneTapNodeEvent<ApplicationGraphData, ApplicationNodeData>)
-      )
+      this._applicationDrawerStore.event$.pipe(filter(isOneTapNodeEvent))
     );
   }
 
@@ -679,10 +751,23 @@ export class ApplicationPageComponent
     }
   }
 
+  onActivateField() {
+    this.patchState({
+      isCreatingField: true,
+      isCreatingCollection: false,
+      isCreatingInstruction: false,
+    });
+  }
+
+  onDeactivateField() {
+    this.patchState({ isCreatingField: false });
+  }
+
   onActivateCollection() {
     this.patchState({
       isCreatingCollection: true,
       isCreatingInstruction: false,
+      isCreatingField: false,
     });
   }
 
@@ -694,6 +779,7 @@ export class ApplicationPageComponent
     this.patchState({
       isCreatingInstruction: true,
       isCreatingCollection: false,
+      isCreatingField: false,
     });
   }
 
@@ -701,27 +787,61 @@ export class ApplicationPageComponent
     this.patchState({ isCreatingInstruction: false });
   }
 
-  onCollectionUnselected() {
+  onUnselect() {
     this.patchState({ selected: null });
   }
 
-  onInstructionUnselected() {
-    this.patchState({ selected: null });
-  }
-
-  onAddNode(
+  onAddInstructionNode(
     workspaceId: string,
     applicationId: string,
-    event: AddInstructionNodeDto | AddCollectionNodeDto
+    { payload, options }: AddInstructionNodeDto
   ) {
-    const { id, kind, ...payload } = event.data;
     this._applicationDrawerStore.addNode(
       {
-        id,
-        data: { ...payload, workspaceId, applicationId },
-        kind,
+        ...payload,
+        data: {
+          ...payload.data,
+          workspaceId,
+          applicationId,
+        },
       },
-      event.options.position
+      options.position
+    );
+  }
+
+  onAddCollectionNode(
+    workspaceId: string,
+    applicationId: string,
+    { payload, options }: AddCollectionNodeDto
+  ) {
+    this._applicationDrawerStore.addNode(
+      {
+        ...payload,
+        data: {
+          ...payload.data,
+          workspaceId,
+          applicationId,
+        },
+      },
+      options.position
+    );
+  }
+
+  onAddFieldNode(
+    workspaceId: string,
+    applicationId: string,
+    { payload, options }: AddFieldNodeDto
+  ) {
+    this._applicationDrawerStore.addNode(
+      {
+        ...payload,
+        data: {
+          ...payload.data,
+          workspaceId,
+          applicationId,
+        },
+      },
+      options.position
     );
   }
 
@@ -729,7 +849,11 @@ export class ApplicationPageComponent
     this._applicationDrawerStore.updateGraph(changes);
   }
 
-  onDeleteGraph(workspaceId: string, graphId: string, kind: string) {
+  onDeleteGraph(
+    workspaceId: string,
+    graphId: string,
+    kind: ApplicationGraphKind
+  ) {
     this._applicationGraphApiService
       .deleteNode(environment.clientId, graphId, {
         graphId,
@@ -744,7 +868,11 @@ export class ApplicationPageComponent
     this._applicationDrawerStore.updateGraphThumbnail(fileId, fileUrl);
   }
 
-  onUpdateNode(nodeId: string, kind: string, changes: UpdateCollectionSubmit) {
+  onUpdateNode(
+    nodeId: string,
+    kind: ApplicationNodeKinds,
+    changes: UpdateCollectionSubmit
+  ) {
     this._applicationDrawerStore.updateNode(nodeId, {
       changes,
       kind,

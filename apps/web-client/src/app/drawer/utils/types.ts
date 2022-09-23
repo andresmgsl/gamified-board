@@ -1,12 +1,8 @@
-export interface NodeDataType {
+import { Entity } from '../../shared/utils';
+
+export interface DefaultNodeDataType {
   name: string;
   thumbnailUrl: string;
-}
-
-export interface Node<T = NodeDataType> {
-  id: string;
-  data: T;
-  kind: string;
 }
 
 export interface Edge {
@@ -15,18 +11,55 @@ export interface Edge {
   target: string;
 }
 
-export interface GraphDataType {
+export interface DefaultGraphDataType {
   name: string;
   thumbnailUrl: string;
 }
 
-export type Graph<T extends GraphDataType, U extends NodeDataType> = {
+export interface Node<
+  NodeKinds extends string,
+  NodeDataType extends DefaultNodeDataType
+> {
   id: string;
-  nodes: Node<U>[];
+  data: NodeDataType;
+  kind: NodeKinds;
+}
+
+export type GetNodeTypes<
+  NodeKinds extends string,
+  NodeDataType extends DefaultNodeDataType,
+  Nodes extends { [key in NodeKinds]: NodeDataType }
+> = {
+  [TNode in keyof Nodes]: Entity<{
+    kind: TNode;
+    data: Nodes[TNode];
+  }>;
+}[keyof Nodes & NodeKinds];
+
+export type GetPartialNodeDataTypes<
+  NodeKinds extends string,
+  NodeDataType extends DefaultNodeDataType,
+  Nodes extends { [key in NodeKinds]: NodeDataType }
+> = {
+  [TNode in keyof Nodes]: Entity<{
+    kind: TNode;
+    data: Partial<Nodes[TNode]>;
+  }>;
+}[keyof Nodes & NodeKinds];
+
+export type Graph<
+  NodeKinds extends string,
+  NodeDataType extends DefaultNodeDataType,
+  NodesDataMap extends { [key in NodeKinds]: NodeDataType },
+  GraphKind extends string,
+  GraphDataType extends DefaultGraphDataType
+> = {
+  id: string;
+  nodes: GetNodeTypes<NodeKinds, NodeDataType, NodesDataMap>[];
   edges: Edge[];
   lastEventId: string;
-  kind: string;
-  data: T;
+  kind: GraphKind;
+  data: GraphDataType;
 };
 
 export type Direction = 'vertical' | 'horizontal';
@@ -61,9 +94,13 @@ export interface ClickEvent {
   payload: { x: number; y: number };
 }
 
-export interface OneTapNodeEvent<T extends NodeDataType> {
+export interface OneTapNodeEvent<
+  NodeKinds extends string,
+  NodeDataType extends DefaultNodeDataType,
+  NodesDataMap extends { [key in NodeKinds]: NodeDataType }
+> {
   type: 'OneTapNode';
-  payload: Node<T>;
+  payload: GetNodeTypes<NodeKinds, NodeDataType, NodesDataMap>;
 }
 
 export interface OneTapEdgeEvent {
@@ -71,26 +108,33 @@ export interface OneTapEdgeEvent {
   payload: string;
 }
 
-export interface UpdateGraphSuccessEvent<T extends GraphDataType> {
+export interface UpdateGraphSuccessEvent<
+  GraphKind extends string,
+  GraphDataType extends DefaultGraphDataType
+> {
   type: 'UpdateGraphSuccess';
   payload: {
-    changes: Partial<T>;
-    kind: string;
+    changes: Partial<GraphDataType>;
+    kind: GraphKind;
   };
 }
 
-export interface UpdateGraphThumbnailSuccessEvent {
+export interface UpdateGraphThumbnailSuccessEvent<GraphKind extends string> {
   type: 'UpdateGraphThumbnailSuccess';
   payload: {
     fileId: string;
     fileUrl: string;
-    kind: string;
+    kind: GraphKind;
   };
 }
 
-export interface AddNodeSuccessEvent<T extends NodeDataType> {
+export interface AddNodeSuccessEvent<
+  NodeKinds extends string,
+  NodeDataType extends DefaultNodeDataType,
+  NodesDataMap extends { [key in NodeKinds]: NodeDataType }
+> {
   type: 'AddNodeSuccess';
-  payload: Node<T>;
+  payload: GetNodeTypes<NodeKinds, NodeDataType, NodesDataMap>;
 }
 
 export interface AddEdgeSuccessEvent {
@@ -102,37 +146,27 @@ export interface AddEdgeSuccessEvent {
   };
 }
 
-export interface AddNodeToEdgeSuccessEvent<T extends NodeDataType> {
-  type: 'AddNodeToEdgeSuccess';
-  payload: {
-    source: string;
-    target: string;
-    edgeId: string;
-    node: Node<T>;
-  };
-}
-
 export interface UpdateNodeEvent {
   type: 'UpdateNode';
   payload: string;
 }
 
-export interface UpdateNodeSuccessEvent<T extends NodeDataType> {
+export interface UpdateNodeSuccessEvent<
+  NodeKinds extends string,
+  NodeDataType extends DefaultNodeDataType,
+  NodesDataMap extends { [key in NodeKinds]: NodeDataType }
+> {
   type: 'UpdateNodeSuccess';
-  payload: {
-    id: string;
-    changes: Partial<T>;
-    kind: string;
-  };
+  payload: GetPartialNodeDataTypes<NodeKinds, NodeDataType, NodesDataMap>;
 }
 
-export interface UpdateNodeThumbnailSuccessEvent {
+export interface UpdateNodeThumbnailSuccessEvent<NodeKinds extends string> {
   type: 'UpdateNodeThumbnailSuccess';
   payload: {
     id: string;
     fileId: string;
     fileUrl: string;
-    kind: string;
+    kind: NodeKinds;
   };
 }
 
@@ -179,17 +213,22 @@ export interface PanDraggedEvent {
   };
 }
 
-export type DrawerEvent<T extends GraphDataType, U extends NodeDataType> =
+export type DrawerEvent<
+  NodeKinds extends string,
+  NodeDataType extends DefaultNodeDataType,
+  NodesDataMap extends { [key in NodeKinds]: NodeDataType },
+  GraphKind extends string,
+  GraphDataType extends DefaultGraphDataType
+> =
   | InitEvent
   | ClickEvent
-  | UpdateGraphSuccessEvent<T>
-  | UpdateGraphThumbnailSuccessEvent
-  | AddNodeSuccessEvent<U>
+  | UpdateGraphSuccessEvent<GraphKind, GraphDataType>
+  | UpdateGraphThumbnailSuccessEvent<GraphKind>
+  | AddNodeSuccessEvent<NodeKinds, NodeDataType, NodesDataMap>
   | AddEdgeSuccessEvent
-  | AddNodeToEdgeSuccessEvent<U>
   | UpdateNodeEvent
-  | UpdateNodeSuccessEvent<U>
-  | UpdateNodeThumbnailSuccessEvent
+  | UpdateNodeSuccessEvent<NodeKinds, NodeDataType, NodesDataMap>
+  | UpdateNodeThumbnailSuccessEvent<NodeKinds>
   | DeleteNodeEvent
   | DeleteNodeSuccessEvent
   | ViewNodeEvent
@@ -197,5 +236,5 @@ export type DrawerEvent<T extends GraphDataType, U extends NodeDataType> =
   | DeleteEdgeSuccessEvent
   | GraphScrolledEvent
   | PanDraggedEvent
-  | OneTapNodeEvent<U>
+  | OneTapNodeEvent<NodeKinds, NodeDataType, NodesDataMap>
   | OneTapEdgeEvent;

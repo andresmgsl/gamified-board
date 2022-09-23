@@ -34,14 +34,16 @@ import {
   isNull,
   Option,
 } from '../../shared/utils';
-import { openEditApplicationModal } from '../components';
+import { openEditFieldModal } from '../components';
+import { FieldType } from '../utils';
 
-export interface AddApplicationNodeDto {
+export interface AddFieldNodeDto {
   payload: Entity<{
-    kind: 'application';
+    kind: 'field';
     data: {
       name: string;
       thumbnailUrl: string;
+      type: FieldType;
     };
   }>;
   options: {
@@ -69,7 +71,7 @@ const initialState: ViewModel = {
 };
 
 @Component({
-  selector: 'pg-active-application',
+  selector: 'pg-active-field',
   template: `
     <pg-active
       *ngIf="active$ | ngrxPush as active"
@@ -91,7 +93,7 @@ const initialState: ViewModel = {
     KeyListenerDirective,
   ],
 })
-export class ActiveApplicationComponent
+export class ActiveFieldComponent
   extends ComponentStore<ViewModel>
   implements OnInit
 {
@@ -111,7 +113,7 @@ export class ActiveApplicationComponent
       this._handleDrawerClick(event);
     }
   }
-  @Output() pgAddNode = new EventEmitter<AddApplicationNodeDto>();
+  @Output() pgAddNode = new EventEmitter<AddFieldNodeDto>();
   @Output() pgDeactivate = new EventEmitter();
 
   private readonly _handleDrawerClick = this.effect<ClickEvent>(
@@ -125,22 +127,23 @@ export class ActiveApplicationComponent
 
           this.patchState({ isAdding: true });
 
-          return openEditApplicationModal(this._dialog, {
-            application: null,
+          return openEditFieldModal(this._dialog, {
+            field: null,
           }).closed.pipe(
-            tap((application) => {
+            tap((field) => {
               this.patchState({ isAdding: false });
 
-              if (application) {
+              if (field) {
                 this.pgDeactivate.emit();
                 this.pgAddNode.emit({
                   payload: {
-                    kind: 'application',
+                    id: generateId(),
+                    kind: 'field',
                     data: {
-                      name: application.name,
+                      name: field.name,
+                      type: field.type,
                       thumbnailUrl: active.thumbnailUrl,
                     },
-                    id: generateId(),
                   },
                   options: {
                     position: event.payload,

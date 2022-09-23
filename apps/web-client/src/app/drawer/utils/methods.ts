@@ -1,18 +1,17 @@
 import * as cytoscape from 'cytoscape';
 import {
   AddNodeSuccessEvent,
-  AddNodeToEdgeSuccessEvent,
   ClickEvent,
+  DefaultGraphDataType,
+  DefaultNodeDataType,
   DeleteEdgeEvent,
   DeleteEdgeSuccessEvent,
   DeleteNodeEvent,
   DeleteNodeSuccessEvent,
   DrawerEvent,
-  GraphDataType,
+  GetNodeTypes,
   GraphScrolledEvent,
   InitEvent,
-  Node,
-  NodeDataType,
   OneTapEdgeEvent,
   OneTapNodeEvent,
   PanDraggedEvent,
@@ -42,169 +41,360 @@ export const createNode = (
   });
 };
 
-export const isInitEvent = <T extends GraphDataType, U extends NodeDataType>(
-  event: DrawerEvent<T, U>
+export const isInitEvent = <
+  NodeKinds extends string,
+  NodeDataType extends DefaultNodeDataType,
+  NodesDataMap extends { [key in NodeKinds]: NodeDataType },
+  GraphKind extends string,
+  GraphDataType extends DefaultGraphDataType
+>(
+  event: DrawerEvent<
+    NodeKinds,
+    NodeDataType,
+    NodesDataMap,
+    GraphKind,
+    GraphDataType
+  >
 ): event is InitEvent => {
   return event.type === 'Init';
 };
 
-export const isClickEvent = <T extends GraphDataType, U extends NodeDataType>(
-  event: DrawerEvent<T, U>
+export const isClickEvent = <
+  NodeKinds extends string,
+  NodeDataType extends DefaultNodeDataType,
+  NodesDataMap extends { [key in NodeKinds]: NodeDataType },
+  GraphKind extends string,
+  GraphDataType extends DefaultGraphDataType
+>(
+  event: DrawerEvent<
+    NodeKinds,
+    NodeDataType,
+    NodesDataMap,
+    GraphKind,
+    GraphDataType
+  >
 ): event is ClickEvent => {
   return event.type === 'Click';
 };
 
 export const isGraphScrolledEvent = <
-  T extends GraphDataType,
-  U extends NodeDataType
+  NodeKinds extends string,
+  NodeDataType extends DefaultNodeDataType,
+  NodesDataMap extends { [key in NodeKinds]: NodeDataType },
+  GraphKind extends string,
+  GraphDataType extends DefaultGraphDataType
 >(
-  event: DrawerEvent<T, U>
+  event: DrawerEvent<
+    NodeKinds,
+    NodeDataType,
+    NodesDataMap,
+    GraphKind,
+    GraphDataType
+  >
 ): event is GraphScrolledEvent => {
   return event.type === 'GraphScrolled';
 };
 
 export const isPanDraggedEvent = <
-  T extends GraphDataType,
-  U extends NodeDataType
+  NodeKinds extends string,
+  NodeDataType extends DefaultNodeDataType,
+  NodesDataMap extends { [key in NodeKinds]: NodeDataType },
+  GraphKind extends string,
+  GraphDataType extends DefaultGraphDataType
 >(
-  event: DrawerEvent<T, U>
+  event: DrawerEvent<
+    NodeKinds,
+    NodeDataType,
+    NodesDataMap,
+    GraphKind,
+    GraphDataType
+  >
 ): event is PanDraggedEvent => {
   return event.type === 'PanDragged';
 };
 
 export const isOneTapNodeEvent = <
-  T extends GraphDataType,
-  U extends NodeDataType
+  NodeKinds extends string,
+  NodeDataType extends DefaultNodeDataType,
+  NodesDataMap extends { [key in NodeKinds]: NodeDataType },
+  GraphKind extends string,
+  GraphDataType extends DefaultGraphDataType
 >(
-  event: DrawerEvent<T, U>
-): event is OneTapNodeEvent<U> => {
+  event: DrawerEvent<
+    NodeKinds,
+    NodeDataType,
+    NodesDataMap,
+    GraphKind,
+    GraphDataType
+  >
+): event is OneTapNodeEvent<NodeKinds, NodeDataType, NodesDataMap> => {
   return event.type === 'OneTapNode';
 };
 
 export const isOneTapEdgeEvent = <
-  T extends GraphDataType,
-  U extends NodeDataType
+  NodeKinds extends string,
+  NodeDataType extends DefaultNodeDataType,
+  NodesDataMap extends { [key in NodeKinds]: NodeDataType },
+  GraphKind extends string,
+  GraphDataType extends DefaultGraphDataType
 >(
-  event: DrawerEvent<T, U>
+  event: DrawerEvent<
+    NodeKinds,
+    NodeDataType,
+    NodesDataMap,
+    GraphKind,
+    GraphDataType
+  >
 ): event is OneTapEdgeEvent => {
   return event.type === 'OneTapEdge';
 };
 
 export const isUpdateGraphSuccessEvent = <
-  T extends GraphDataType,
-  U extends NodeDataType
+  NodeKinds extends string,
+  NodeDataType extends DefaultNodeDataType,
+  NodesDataMap extends { [key in NodeKinds]: NodeDataType },
+  GraphKind extends string,
+  GraphDataType extends DefaultGraphDataType
 >(
-  event: DrawerEvent<T, U>
-): event is UpdateGraphSuccessEvent<T> => {
+  event: DrawerEvent<
+    NodeKinds,
+    NodeDataType,
+    NodesDataMap,
+    GraphKind,
+    GraphDataType
+  >
+): event is UpdateGraphSuccessEvent<GraphKind, GraphDataType> => {
   return event.type === 'UpdateGraphSuccess';
 };
 
 export const isUpdateGraphThumbnailSuccessEvent = <
-  T extends GraphDataType,
-  U extends NodeDataType
+  NodeKinds extends string,
+  NodeDataType extends DefaultNodeDataType,
+  NodesDataMap extends { [key in NodeKinds]: NodeDataType },
+  GraphKind extends string,
+  GraphDataType extends DefaultGraphDataType
 >(
-  event: DrawerEvent<T, U>
-): event is UpdateGraphThumbnailSuccessEvent => {
+  event: DrawerEvent<
+    NodeKinds,
+    NodeDataType,
+    NodesDataMap,
+    GraphKind,
+    GraphDataType
+  >
+): event is UpdateGraphThumbnailSuccessEvent<GraphKind> => {
   return event.type === 'UpdateGraphThumbnailSuccess';
 };
 
 export const isAddNodeSuccessEvent = <
-  T extends GraphDataType,
-  U extends NodeDataType
+  NodeKinds extends string,
+  NodeDataType extends DefaultNodeDataType,
+  NodesDataMap extends { [key in NodeKinds]: NodeDataType },
+  GraphKind extends string,
+  GraphDataType extends DefaultGraphDataType
 >(
-  event: DrawerEvent<T, U>
-): event is AddNodeSuccessEvent<U> => {
+  event: DrawerEvent<
+    NodeKinds,
+    NodeDataType,
+    NodesDataMap,
+    GraphKind,
+    GraphDataType
+  >
+): event is AddNodeSuccessEvent<NodeKinds, NodeDataType, NodesDataMap> => {
   return event.type === 'AddNodeSuccess';
 };
 
-export const isAddNodeToEdgeSuccessEvent = <
-  T extends GraphDataType,
-  U extends NodeDataType
->(
-  event: DrawerEvent<T, U>
-): event is AddNodeToEdgeSuccessEvent<U> => {
-  return event.type === 'AddNodeToEdgeSuccess';
-};
-
 export const isUpdateNodeEvent = <
-  T extends GraphDataType,
-  U extends NodeDataType
+  NodeKinds extends string,
+  NodeDataType extends DefaultNodeDataType,
+  NodesDataMap extends { [key in NodeKinds]: NodeDataType },
+  GraphKind extends string,
+  GraphDataType extends DefaultGraphDataType
 >(
-  event: DrawerEvent<T, U>
+  event: DrawerEvent<
+    NodeKinds,
+    NodeDataType,
+    NodesDataMap,
+    GraphKind,
+    GraphDataType
+  >
 ): event is UpdateNodeEvent => {
   return event.type === 'UpdateNode';
 };
 
 export const isUpdateNodeSuccessEvent = <
-  T extends GraphDataType,
-  U extends NodeDataType
+  NodeKinds extends string,
+  NodeDataType extends DefaultNodeDataType,
+  NodesDataMap extends { [key in NodeKinds]: NodeDataType },
+  GraphKind extends string,
+  GraphDataType extends DefaultGraphDataType
 >(
-  event: DrawerEvent<T, U>
-): event is UpdateNodeSuccessEvent<U> => {
+  event: DrawerEvent<
+    NodeKinds,
+    NodeDataType,
+    NodesDataMap,
+    GraphKind,
+    GraphDataType
+  >
+): event is UpdateNodeSuccessEvent<NodeKinds, NodeDataType, NodesDataMap> => {
   return event.type === 'UpdateNodeSuccess';
 };
 
 export const isUpdateNodeThumbnailSuccessEvent = <
-  T extends GraphDataType,
-  U extends NodeDataType
+  NodeKinds extends string,
+  NodeDataType extends DefaultNodeDataType,
+  NodesDataMap extends { [key in NodeKinds]: NodeDataType },
+  GraphKind extends string,
+  GraphDataType extends DefaultGraphDataType
 >(
-  event: DrawerEvent<T, U>
-): event is UpdateNodeThumbnailSuccessEvent => {
+  event: DrawerEvent<
+    NodeKinds,
+    NodeDataType,
+    NodesDataMap,
+    GraphKind,
+    GraphDataType
+  >
+): event is UpdateNodeThumbnailSuccessEvent<NodeKinds> => {
   return event.type === 'UpdateNodeThumbnailSuccess';
 };
 
 export const isDeleteNodeEvent = <
-  T extends GraphDataType,
-  U extends NodeDataType
+  NodeKinds extends string,
+  NodeDataType extends DefaultNodeDataType,
+  NodesDataMap extends { [key in NodeKinds]: NodeDataType },
+  GraphKind extends string,
+  GraphDataType extends DefaultGraphDataType
 >(
-  event: DrawerEvent<T, U>
+  event: DrawerEvent<
+    NodeKinds,
+    NodeDataType,
+    NodesDataMap,
+    GraphKind,
+    GraphDataType
+  >
 ): event is DeleteNodeEvent => {
   return event.type === 'DeleteNode';
 };
 
 export const isDeleteNodeSuccessEvent = <
-  T extends GraphDataType,
-  U extends NodeDataType
+  NodeKinds extends string,
+  NodeDataType extends DefaultNodeDataType,
+  NodesDataMap extends { [key in NodeKinds]: NodeDataType },
+  GraphKind extends string,
+  GraphDataType extends DefaultGraphDataType
 >(
-  event: DrawerEvent<T, U>
+  event: DrawerEvent<
+    NodeKinds,
+    NodeDataType,
+    NodesDataMap,
+    GraphKind,
+    GraphDataType
+  >
 ): event is DeleteNodeSuccessEvent => {
   return event.type === 'DeleteNodeSuccess';
 };
 
 export const isViewNodeEvent = <
-  T extends GraphDataType,
-  U extends NodeDataType
+  NodeKinds extends string,
+  NodeDataType extends DefaultNodeDataType,
+  NodesDataMap extends { [key in NodeKinds]: NodeDataType },
+  GraphKind extends string,
+  GraphDataType extends DefaultGraphDataType
 >(
-  event: DrawerEvent<T, U>
+  event: DrawerEvent<
+    NodeKinds,
+    NodeDataType,
+    NodesDataMap,
+    GraphKind,
+    GraphDataType
+  >
 ): event is ViewNodeEvent => {
   return event.type === 'ViewNode';
 };
 
 export const isDeleteEdgeEvent = <
-  T extends GraphDataType,
-  U extends NodeDataType
+  NodeKinds extends string,
+  NodeDataType extends DefaultNodeDataType,
+  NodesDataMap extends { [key in NodeKinds]: NodeDataType },
+  GraphKind extends string,
+  GraphDataType extends DefaultGraphDataType
 >(
-  event: DrawerEvent<T, U>
+  event: DrawerEvent<
+    NodeKinds,
+    NodeDataType,
+    NodesDataMap,
+    GraphKind,
+    GraphDataType
+  >
 ): event is DeleteEdgeEvent => {
   return event.type === 'DeleteEdge';
 };
 
 export const isDeleteEdgeSuccessEvent = <
-  T extends GraphDataType,
-  U extends NodeDataType
+  NodeKinds extends string,
+  NodeDataType extends DefaultNodeDataType,
+  NodesDataMap extends { [key in NodeKinds]: NodeDataType },
+  GraphKind extends string,
+  GraphDataType extends DefaultGraphDataType
 >(
-  event: DrawerEvent<T, U>
+  event: DrawerEvent<
+    NodeKinds,
+    NodeDataType,
+    NodesDataMap,
+    GraphKind,
+    GraphDataType
+  >
 ): event is DeleteEdgeSuccessEvent => {
   return event.type === 'DeleteEdgeSuccess';
 };
 
+export const patchNode = <
+  NodeKinds extends string,
+  NodeDataType extends DefaultNodeDataType,
+  NodesDataMap extends { [key in NodeKinds]: NodeDataType }
+>(
+  node: GetNodeTypes<NodeKinds, NodeDataType, NodesDataMap>,
+  payload: Partial<NodesDataMap[NodeKinds]>
+): GetNodeTypes<NodeKinds, NodeDataType, NodesDataMap> => {
+  return {
+    ...node,
+    data: {
+      ...node.data,
+      ...payload,
+    },
+  };
+};
+
+export const defaultNodeLabelFunction = <
+  NodeKinds extends string,
+  NodeDataType extends DefaultNodeDataType,
+  NodesDataMap extends { [key in NodeKinds]: NodeDataType }
+>(
+  node: GetNodeTypes<NodeKinds, NodeDataType, NodesDataMap>
+) => {
+  return `
+    <div class="w-[280px] h-[85px] flex gap-2 items-center px-8 bg-[length:280px_85px] bg-[url('assets/images/node.png')] z-50">
+      <div 
+          class="w-[56px] h-[52px] shrink-0 rounded-lg border-gray-700 border-2 bg-cover bg-center"
+          style="background-image: url(${node.data.thumbnailUrl});">
+      </div>
+      <div style="font-family: 'Courier New', Courier, monospace">
+        <h2 class="text-xl mt-2 text-white">${node.data.name}</h2>
+        <p class="italic text-gray-400">${node.kind}</p>
+      </div>
+    </div>
+  `;
+};
+
 export const createGraph = <
-  NodeDataType extends { name: string; thumbnailUrl: string }
+  NodeKinds extends string,
+  NodeDataType extends DefaultNodeDataType,
+  NodesDataMap extends { [key in NodeKinds]: NodeDataType }
 >(
   container: HTMLElement,
   nodes: cytoscape.NodeDefinition[],
   edges: cytoscape.EdgeDefinition[],
-  groups: cytoscape.ElementDefinition[]
+  groups: cytoscape.ElementDefinition[],
+  labelFn: (node: GetNodeTypes<NodeKinds, NodeDataType, NodesDataMap>) => string
 ): cytoscape.Core => {
   return cytoscape({
     container,
@@ -307,20 +497,7 @@ export const createGraph = <
   }).nodeHtmlLabel([
     {
       query: '.bp-bd-node',
-      tpl: (node: Node<NodeDataType>) => {
-        return `
-          <div class="w-[280px] h-[85px] flex gap-2 items-center px-8 bg-[length:280px_85px] bg-[url('assets/images/node.png')] z-50">
-            <div 
-                class="w-[56px] h-[52px] shrink-0 rounded-lg border-gray-700 border-2 bg-cover bg-center"
-                style="background-image: url(${node.data.thumbnailUrl});">
-            </div>
-            <div style="font-family: 'Courier New', Courier, monospace">
-              <h2 class="text-xl mt-2 text-white">${node.data.name}</h2>
-              <p class="italic text-gray-400">${node.kind}</p>
-            </div>
-          </div>
-        `;
-      },
+      tpl: labelFn,
     },
   ]);
 };

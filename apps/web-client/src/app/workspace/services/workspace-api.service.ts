@@ -40,8 +40,6 @@ export class WorkspaceApiService {
       map((workspace) => ({
         id: workspaceId,
         data: workspace['data'],
-        nodes: workspace['nodes'],
-        edges: workspace['edges'],
       }))
     );
   }
@@ -51,13 +49,11 @@ export class WorkspaceApiService {
       query(
         collectionGroup(this._firestore, 'graphs').withConverter({
           fromFirestore: (snapshot) => {
-            const data = snapshot.data();
+            const workspace = snapshot.data();
 
             return {
               id: snapshot.id,
-              data: data['data'],
-              nodes: data['nodes'],
-              edges: data['edges'],
+              data: workspace['data'],
             };
           },
           toFirestore: (it) => it,

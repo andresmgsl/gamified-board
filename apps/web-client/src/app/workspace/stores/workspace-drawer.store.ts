@@ -1,11 +1,20 @@
 import { Injectable } from '@angular/core';
 import { DrawerStore } from '../../drawer/stores';
-import { WorkspaceGraphData, WorkspaceNodeData } from '../utils';
+import {
+  WorkspaceGraphData,
+  WorkspaceGraphKind,
+  WorkspaceNodeData,
+  WorkspaceNodeKinds,
+  WorkspaceNodesData,
+} from '../utils';
 
 @Injectable()
 export class WorkspaceDrawerStore extends DrawerStore<
-  WorkspaceGraphData,
-  WorkspaceNodeData
+  WorkspaceNodeKinds,
+  WorkspaceNodeData,
+  WorkspaceNodesData,
+  WorkspaceGraphKind,
+  WorkspaceGraphData
 > {
   constructor() {
     super();

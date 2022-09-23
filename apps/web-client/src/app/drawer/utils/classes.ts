@@ -4,28 +4,63 @@ import { DagreLayoutOptions } from 'cytoscape-dagre';
 import { EdgeHandlesInstance } from 'cytoscape-edgehandles';
 import { BehaviorSubject, Observable } from 'rxjs';
 import { Option } from '../../shared/utils';
-import { createGraph, createNode } from './methods';
-import { DrawerEvent, Graph, GraphDataType, Node, NodeDataType } from './types';
+import { createGraph, createNode, defaultNodeLabelFunction } from './methods';
+import {
+  DefaultGraphDataType,
+  DefaultNodeDataType,
+  DrawerEvent,
+  GetNodeTypes,
+  GetPartialNodeDataTypes,
+  Graph,
+} from './types';
 
-export class Drawer<T extends GraphDataType, U extends NodeDataType> {
+export class Drawer<
+  NodeKinds extends string,
+  NodeDataType extends DefaultNodeDataType,
+  NodesDataMap extends { [key in NodeKinds]: NodeDataType },
+  GraphKind extends string,
+  GraphDataType extends DefaultGraphDataType
+> {
   private _layout: cytoscape.Layouts | null = null;
   private _nodeCxtMenu: MenuInstance | null = null;
   private _edgeCxtMenu: MenuInstance | null = null;
   private _edgeHandles: EdgeHandlesInstance | null = null;
   private _rankDir: 'TB' | 'LR' = 'TB';
 
-  private readonly _event = new BehaviorSubject<DrawerEvent<T, U>>({
+  private readonly _event = new BehaviorSubject<
+    DrawerEvent<NodeKinds, NodeDataType, NodesDataMap, GraphKind, GraphDataType>
+  >({
     type: 'Init',
   });
-  private readonly _graph: BehaviorSubject<Graph<T, U>>;
-  private readonly _selected = new BehaviorSubject<Option<Node<U>>>(null);
+  private readonly _graph: BehaviorSubject<
+    Graph<NodeKinds, NodeDataType, NodesDataMap, GraphKind, GraphDataType>
+  >;
+  private readonly _selected = new BehaviorSubject<
+    Option<GetNodeTypes<NodeKinds, NodeDataType, NodesDataMap>>
+  >(null);
   private readonly _cy: cytoscape.Core;
   readonly event$ = this._event.asObservable();
-  readonly graph$: Observable<Graph<T, U>>;
+  readonly graph$: Observable<
+    Graph<NodeKinds, NodeDataType, NodesDataMap, GraphKind, GraphDataType>
+  >;
   readonly selected$ = this._selected.asObservable();
 
-  constructor(graph: Graph<T, U>, groups: string[], element: HTMLElement) {
-    this._cy = createGraph<U>(
+  constructor(
+    graph: Graph<
+      NodeKinds,
+      NodeDataType,
+      NodesDataMap,
+      GraphKind,
+      GraphDataType
+    >,
+    _nodes: GetNodeTypes<NodeKinds, NodeDataType, NodesDataMap>[], // this field is only to help the type inference
+    groups: string[],
+    element: HTMLElement,
+    labelFn: (
+      node: GetNodeTypes<NodeKinds, NodeDataType, NodesDataMap>
+    ) => string = defaultNodeLabelFunction
+  ) {
+    this._cy = createGraph<NodeKinds, NodeDataType, NodesDataMap>(
       element,
       graph.nodes.map((node) => ({
         data: node,
@@ -36,7 +71,8 @@ export class Drawer<T extends GraphDataType, U extends NodeDataType> {
       groups.map((group) => ({
         data: { id: group, kind: 'group' },
         group: 'nodes',
-      }))
+      })),
+      labelFn
     );
     this._graph = new BehaviorSubject(graph);
     this.graph$ = this._graph.asObservable();
@@ -78,8 +114,10 @@ export class Drawer<T extends GraphDataType, U extends NodeDataType> {
     });
 
     this._cy.on('local.graph-updated', (ev, ...extraParams) => {
-      const kind = [...(extraParams as unknown[])][0] as string;
-      const changes = [...(extraParams as unknown[])][1] as Partial<T>;
+      const kind = [...(extraParams as unknown[])][0] as GraphKind;
+      const changes = [
+        ...(extraParams as unknown[]),
+      ][1] as Partial<GraphDataType>;
 
       this._event.next({
         type: 'UpdateGraphSuccess',
@@ -91,7 +129,7 @@ export class Drawer<T extends GraphDataType, U extends NodeDataType> {
     });
 
     this._cy.on('server.graph-updated', (ev, ...extraParams) => {
-      const changes = extraParams[0] as Partial<T>;
+      const changes = extraParams[0] as Partial<GraphDataType>;
 
       const graph = this._graph.getValue();
       this._graph.next({
@@ -106,7 +144,7 @@ export class Drawer<T extends GraphDataType, U extends NodeDataType> {
     this._cy.on('local.graph-thumbnail-updated', (ev, ...extraParams) => {
       const fileId = [...(extraParams as unknown[])][0] as string;
       const fileUrl = [...(extraParams as unknown[])][1] as string;
-      const kind = [...(extraParams as unknown[])][2] as string;
+      const kind = [...(extraParams as unknown[])][2] as GraphKind;
 
       this._event.next({
         type: 'UpdateGraphThumbnailSuccess',
@@ -136,36 +174,38 @@ export class Drawer<T extends GraphDataType, U extends NodeDataType> {
 
       this._event.next({
         type: 'AddNodeSuccess',
-        payload: node as Node<U>,
+        payload: node as GetNodeTypes<NodeKinds, NodeDataType, NodesDataMap>,
       });
     });
 
     this._cy.on('server.node-added', (ev, ...extraParams) => {
-      const node = extraParams[0] as Node<U>;
+      const node = extraParams[0] as GetNodeTypes<
+        NodeKinds,
+        NodeDataType,
+        NodesDataMap
+      >;
 
       createNode(this._cy, node);
     });
 
     this._cy.on('local.node-updated', (ev, ...extraParams) => {
-      const nodeId = extraParams[0] as string;
-      const payload = [...(extraParams as unknown[])][1] as {
-        kind: string;
-        changes: Partial<U>;
-      };
+      const payload = extraParams[0] as GetPartialNodeDataTypes<
+        NodeKinds,
+        NodeDataType,
+        NodesDataMap
+      >;
 
       this._event.next({
         type: 'UpdateNodeSuccess',
-        payload: {
-          id: nodeId,
-          changes: payload.changes,
-          kind: payload.kind,
-        },
+        payload,
       });
     });
 
     this._cy.on('server.node-updated', (ev, ...extraParams) => {
       const nodeId = extraParams[0] as string;
-      const changes = [...(extraParams as unknown[])][1] as Partial<U>;
+      const changes = [
+        ...(extraParams as unknown[]),
+      ][1] as Partial<NodeDataType>;
 
       const node = this._cy.getElementById(nodeId);
       const nodeData = node.data();
@@ -176,7 +216,7 @@ export class Drawer<T extends GraphDataType, U extends NodeDataType> {
       const nodeId = extraParams[0] as string;
       const fileId = [...(extraParams as unknown[])][1] as string;
       const fileUrl = [...(extraParams as unknown[])][2] as string;
-      const kind = [...(extraParams as unknown[])][3] as string;
+      const kind = [...(extraParams as unknown[])][3] as NodeKinds;
 
       this._event.next({
         type: 'UpdateNodeThumbnailSuccess',
@@ -377,7 +417,7 @@ export class Drawer<T extends GraphDataType, U extends NodeDataType> {
     this.setupLayout(this._rankDir);
   }
 
-  updateGraph(changes: Partial<T>) {
+  updateGraph(changes: Partial<GraphDataType>) {
     const graph = this._graph.getValue();
     this._graph.next({
       ...graph,
@@ -405,12 +445,22 @@ export class Drawer<T extends GraphDataType, U extends NodeDataType> {
     ]);
   }
 
-  addNode(node: Node<U>, position?: { x: number; y: number }) {
+  addNode(
+    node: GetNodeTypes<
+      NodeKinds,
+      NodeDataType,
+      { [key in NodeKinds]: NodeDataType }
+    >,
+    position?: { x: number; y: number }
+  ) {
     createNode(this._cy, node, position);
     this._cy.emit('local.node-added', [node]);
   }
 
-  updateNode(nodeId: string, payload: { changes: Partial<U>; kind: string }) {
+  updateNode(
+    nodeId: string,
+    payload: { changes: Partial<NodeDataType>; kind: NodeKinds }
+  ) {
     const node = this._cy.getElementById(nodeId);
 
     const nodeData = node.data();
@@ -419,7 +469,13 @@ export class Drawer<T extends GraphDataType, U extends NodeDataType> {
       data: { ...nodeData.data, ...payload.changes },
     });
 
-    this._cy.emit('local.node-updated', [nodeId, payload]);
+    this._cy.emit('local.node-updated', [
+      {
+        id: nodeId,
+        data: payload.changes,
+        kind: payload.kind,
+      },
+    ]);
   }
 
   updateNodeThumbnail(nodeId: string, fileId: string, fileUrl: string) {
@@ -445,7 +501,7 @@ export class Drawer<T extends GraphDataType, U extends NodeDataType> {
     this._cy.emit('local.node-deleted', [nodeId, nodeKind]);
   }
 
-  handleGraphUpdated(changes: Partial<T>) {
+  handleGraphUpdated(changes: Partial<GraphDataType>) {
     this._cy.emit('server.graph-updated', [changes]);
   }
 
@@ -453,11 +509,17 @@ export class Drawer<T extends GraphDataType, U extends NodeDataType> {
     this._cy.emit('server.graph-thumbnail-updated', [fileId, fileUrl]);
   }
 
-  handleNodeAdded(node: Node<U>) {
+  handleNodeAdded(
+    node: GetNodeTypes<
+      NodeKinds,
+      NodeDataType,
+      { [key in NodeKinds]: NodeDataType }
+    >
+  ) {
     this._cy.emit('server.node-added', [node]);
   }
 
-  handleNodeUpdated(nodeId: string, changes: Partial<U>) {
+  handleNodeUpdated(nodeId: string, changes: Partial<NodeDataType>) {
     this._cy.emit('server.node-updated', [nodeId, changes]);
   }
 

@@ -9,7 +9,6 @@ import {
 } from '@angular/core';
 import { LetModule, PushModule } from '@ngrx/component';
 import { ComponentStore } from '@ngrx/component-store';
-import { Node } from '../../drawer/utils';
 import {
   ConfirmModalDirective,
   SecondaryDockComponent,
@@ -27,7 +26,7 @@ import {
   UpdateInstructionModalDirective,
   UpdateInstructionSubmit,
 } from '../components';
-import { ApplicationNodeData } from '../utils';
+import { InstructionNode } from '../utils';
 
 interface HotKey {
   slot: number;
@@ -36,7 +35,7 @@ interface HotKey {
 }
 
 interface ViewModel {
-  instruction: Option<Node<ApplicationNodeData>>;
+  instruction: Option<InstructionNode>;
   isUpdating: boolean;
   isUpdatingThumbnail: boolean;
   isDeleting: boolean;
@@ -229,7 +228,7 @@ export class InstructionDockComponent extends ComponentStore<ViewModel> {
   readonly hotkeys$ = this.select(({ hotkeys }) => hotkeys);
   readonly instruction$ = this.select(({ instruction }) => instruction);
 
-  @Input() set pgInstruction(instruction: Option<Node<ApplicationNodeData>>) {
+  @Input() set pgInstruction(instruction: Option<InstructionNode>) {
     this.patchState({ instruction });
   }
   @Output() pgInstructionUnselected = new EventEmitter();

@@ -21,12 +21,8 @@ import {
 } from '../../shared/directives';
 import { SlotHotkeyPipe } from '../../shared/pipes';
 import { Option } from '../../shared/utils';
-import {
-  CreateApplicationModalDirective,
-  UpdateWorkspaceModalDirective,
-  UpdateWorkspaceSubmit,
-} from '../components';
-import { WorkspaceGraph } from '../utils';
+import { UpdateFieldModalDirective, UpdateFieldSubmit } from '../components';
+import { FieldNode } from '../utils';
 
 interface HotKey {
   slot: number;
@@ -35,8 +31,7 @@ interface HotKey {
 }
 
 interface ViewModel {
-  workspace: Option<WorkspaceGraph>;
-  isCreating: boolean;
+  field: Option<FieldNode>;
   isUpdating: boolean;
   isUpdatingThumbnail: boolean;
   isDeleting: boolean;
@@ -44,8 +39,7 @@ interface ViewModel {
 }
 
 const initialState: ViewModel = {
-  workspace: null,
-  isCreating: false,
+  field: null,
   isUpdating: false,
   isUpdatingThumbnail: false,
   isDeleting: false,
@@ -74,22 +68,24 @@ const initialState: ViewModel = {
 };
 
 @Component({
-  selector: 'pg-workspace-dock',
+  selector: 'pg-field-dock',
   template: `
     <pg-secondary-dock
-      *ngIf="workspace$ | ngrxPush as workspace"
+      *ngIf="field$ | ngrxPush as field"
       class="text-white block bp-font-game"
+      pgKeyListener="Escape"
+      (pgKeyDown)="onUnselectField()"
     >
       <div class="flex gap-4 justify-center items-start">
         <img
-          [src]="workspace.data.thumbnailUrl"
-          pgDefaultImageUrl="assets/generic/workspace.png"
+          [src]="field.data.thumbnailUrl"
+          pgDefaultImageUrl="assets/generic/field.png"
           class="w-[100px] h-[106px] overflow-hidden rounded-xl"
         />
 
         <div>
           <h2 class="text-xl">Name</h2>
-          <p class="text-base">{{ workspace.data.name }}</p>
+          <p class="text-base">{{ field.data.name }}</p>
         </div>
 
         <div class="ml-10">
@@ -103,21 +99,21 @@ const initialState: ViewModel = {
                   class="absolute left-0 top-0 px-1 py-0.5 text-white bg-black bg-opacity-60 z-10 uppercase"
                   style="font-size: 0.5rem; line-height: 0.5rem"
                   [pgKeyListener]="hotkeys[0].code"
-                  (pgKeyDown)="updateWorkspaceModal.open()"
+                  (pgKeyDown)="updateFieldModal.open()"
                 >
                   {{ hotkey }}
                 </span>
               </ng-container>
 
               <pg-square-button
-                pgThumbnailUrl="assets/generic/workspace.png"
+                pgThumbnailUrl="assets/generic/field.png"
                 [pgIsActive]="false"
-                #updateWorkspaceModal="modal"
-                pgUpdateWorkspaceModal
-                [pgWorkspace]="workspace"
+                pgUpdateFieldModal
+                #updateFieldModal="modal"
+                [pgField]="field"
                 (pgOpenModal)="setIsUpdating(true)"
                 (pgCloseModal)="setIsUpdating(false)"
-                (pgUpdateWorkspace)="onUpdateWorkspace(workspace.id, $event)"
+                (pgUpdateField)="onUpdateField(field.id, $event)"
               ></pg-square-button>
             </div>
 
@@ -128,19 +124,19 @@ const initialState: ViewModel = {
                   class="absolute left-0 top-0 px-1 py-0.5 text-white bg-black bg-opacity-60 z-10 uppercase"
                   style="font-size: 0.5rem; line-height: 0.5rem"
                   [pgKeyListener]="hotkeys[1].code"
-                  (pgKeyDown)="uploadWorkspaceThumbnailModal.open()"
+                  (pgKeyDown)="updateFieldThumbnailModal.open()"
                 >
                   {{ hotkey }}
                 </span>
               </ng-container>
 
               <pg-square-button
-                pgThumbnailUrl="assets/generic/workspace.png"
+                pgThumbnailUrl="assets/generic/field.png"
                 [pgIsActive]="(isUpdatingThumbnail$ | ngrxPush) ?? false"
                 pgUploadFileModal
-                #uploadWorkspaceThumbnailModal="modal"
+                #updateFieldThumbnailModal="modal"
                 (pgSubmit)="
-                  onUploadThumbnail(workspace.id, $event.fileId, $event.fileUrl)
+                  onUploadThumbnail(field.id, $event.fileId, $event.fileUrl)
                 "
                 (pgOpenModal)="setIsUpdatingThumbnail(true)"
                 (pgCloseModal)="setIsUpdatingThumbnail(false)"
@@ -154,7 +150,7 @@ const initialState: ViewModel = {
                   class="absolute left-0 top-0 px-1 py-0.5 text-white bg-black bg-opacity-60 z-10 uppercase"
                   style="font-size: 0.5rem; line-height: 0.5rem"
                   [pgKeyListener]="hotkeys[2].code"
-                  (pgKeyDown)="deleteWorkspaceModal.open()"
+                  (pgKeyDown)="deleteFieldModal.open()"
                 >
                   {{ hotkey }}
                 </span>
@@ -162,10 +158,10 @@ const initialState: ViewModel = {
 
               <pg-square-button
                 [pgIsActive]="(isDeleting$ | ngrxPush) ?? false"
-                pgThumbnailUrl="assets/generic/workspace.png"
-                (pgConfirm)="onDeleteWorkspace(workspace.id)"
+                pgThumbnailUrl="assets/generic/field.png"
+                (pgConfirm)="onDeleteField(field.id)"
                 pgConfirmModal
-                #deleteWorkspaceModal="modal"
+                #deleteFieldModal="modal"
                 pgMessage="Are you sure? This action cannot be reverted."
                 (pgOpenModal)="setIsDeleting(true)"
                 (pgCloseModal)="setIsDeleting(false)"
@@ -179,15 +175,15 @@ const initialState: ViewModel = {
                   class="absolute left-0 top-0 px-1 py-0.5 text-white bg-black bg-opacity-60 z-10 uppercase"
                   style="font-size: 0.5rem; line-height: 0.5rem"
                   [pgKeyListener]="hotkeys[3].code"
-                  (pgKeyDown)="onActivateApplication()"
+                  (pgKeyDown)="onUnselectField()"
                 >
                   {{ hotkey }}
                 </span>
               </ng-container>
 
               <pg-square-button
-                pgThumbnailUrl="assets/generic/application.png"
-                (click)="onActivateApplication()"
+                pgThumbnailUrl="assets/generic/field.png"
+                (click)="onUnselectField()"
               ></pg-square-button>
             </div>
           </div>
@@ -207,41 +203,34 @@ const initialState: ViewModel = {
     ConfirmModalDirective,
     DefaultImageDirective,
     UploadFileModalDirective,
-    UpdateWorkspaceModalDirective,
-    CreateApplicationModalDirective,
+    UpdateFieldModalDirective,
     SecondaryDockComponent,
   ],
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
-export class WorkspaceDockComponent extends ComponentStore<ViewModel> {
-  readonly isCreating$ = this.select(({ isCreating }) => isCreating);
+export class FieldDockComponent extends ComponentStore<ViewModel> {
   readonly isUpdating$ = this.select(({ isUpdating }) => isUpdating);
   readonly isUpdatingThumbnail$ = this.select(
     ({ isUpdatingThumbnail }) => isUpdatingThumbnail
   );
   readonly isDeleting$ = this.select(({ isDeleting }) => isDeleting);
   readonly hotkeys$ = this.select(({ hotkeys }) => hotkeys);
-  readonly workspace$ = this.select(({ workspace }) => workspace);
+  readonly field$ = this.select(({ field }) => field);
 
-  @Input() set pgWorkspace(workspace: Option<WorkspaceGraph>) {
-    this.patchState({ workspace });
+  @Input() set pgField(field: Option<FieldNode>) {
+    this.patchState({ field });
   }
-  @Output() pgApplicationActivate = new EventEmitter();
-  @Output() pgUpdateWorkspace = new EventEmitter<{
+  @Output() pgFieldUnselected = new EventEmitter();
+  @Output() pgUpdateField = new EventEmitter<{
     id: string;
-    changes: UpdateWorkspaceSubmit;
+    changes: UpdateFieldSubmit;
   }>();
-  @Output() pgUpdateWorkspaceThumbnail = new EventEmitter<{
+  @Output() pgUpdateFieldThumbnail = new EventEmitter<{
     id: string;
     fileId: string;
     fileUrl: string;
   }>();
-  @Output() pgDeleteWorkspace = new EventEmitter<string>();
-
-  readonly setIsCreating = this.updater<boolean>((state, isCreating) => ({
-    ...state,
-    isCreating,
-  }));
+  @Output() pgDeleteField = new EventEmitter<string>();
 
   readonly setIsUpdating = this.updater<boolean>((state, isUpdating) => ({
     ...state,
@@ -264,26 +253,26 @@ export class WorkspaceDockComponent extends ComponentStore<ViewModel> {
     super(initialState);
   }
 
-  onUpdateWorkspace(workspaceId: string, workspaceData: UpdateWorkspaceSubmit) {
-    this.pgUpdateWorkspace.emit({
-      id: workspaceId,
-      changes: workspaceData,
+  onUpdateField(fieldId: string, fieldData: UpdateFieldSubmit) {
+    this.pgUpdateField.emit({
+      id: fieldId,
+      changes: fieldData,
     });
   }
 
-  onUploadThumbnail(workspaceId: string, fileId: string, fileUrl: string) {
-    this.pgUpdateWorkspaceThumbnail.emit({
-      id: workspaceId,
+  onUploadThumbnail(fieldId: string, fileId: string, fileUrl: string) {
+    this.pgUpdateFieldThumbnail.emit({
+      id: fieldId,
       fileId,
       fileUrl,
     });
   }
 
-  onDeleteWorkspace(workspaceId: string) {
-    this.pgDeleteWorkspace.emit(workspaceId);
+  onDeleteField(fieldId: string) {
+    this.pgDeleteField.emit(fieldId);
   }
 
-  onActivateApplication() {
-    this.pgApplicationActivate.emit();
+  onUnselectField() {
+    this.pgFieldUnselected.emit();
   }
 }
