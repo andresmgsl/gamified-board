@@ -1,4 +1,3 @@
-export * from './active-application.component';
 export * from './active-collection.component';
 export * from './active-field.component';
 export * from './active-instruction.component';
@@ -7,4 +6,5 @@ export * from './applications-inventory.component';
 export * from './collection-dock.component';
 export * from './field-dock.component';
 export * from './instruction-dock.component';
+export * from './left-dock.component';
 export * from './right-dock.component';

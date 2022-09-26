@@ -9,6 +9,7 @@ import {
   DefaultGraphDataType,
   DefaultNodeDataType,
   DrawerEvent,
+  Edge,
   GetNodeTypes,
   GetPartialNodeDataTypes,
   Graph,
@@ -56,6 +57,10 @@ export class Drawer<
     _nodes: GetNodeTypes<NodeKinds, NodeDataType, NodesDataMap>[], // this field is only to help the type inference
     groups: string[],
     element: HTMLElement,
+    private canConnectFn: (
+      source: cytoscape.NodeSingular,
+      target: cytoscape.NodeSingular
+    ) => boolean = () => true,
     labelFn: (
       node: GetNodeTypes<NodeKinds, NodeDataType, NodesDataMap>
     ) => string = defaultNodeLabelFunction
@@ -243,7 +248,7 @@ export class Drawer<
 
     this._cy.on('local.node-deleted', (_, ...extraParams) => {
       const nodeId = extraParams[0] as string;
-      const kind = [...(extraParams as unknown[])][1] as string;
+      const kind = [...(extraParams as unknown[])][1] as NodeKinds;
 
       this._event.next({
         type: 'DeleteNodeSuccess',
@@ -281,7 +286,7 @@ export class Drawer<
     });
 
     this._cy.on('server.edge-added', (ev, ...extraParams) => {
-      const edge = extraParams[0] as cytoscape.EdgeDataDefinition;
+      const edge = extraParams[0] as Edge;
 
       this._cy.add({ data: edge, group: 'edges' });
     });
@@ -331,7 +336,10 @@ export class Drawer<
           content: 'info',
           select: (node) => {
             if (node.isNode()) {
-              this._event.next({ type: 'ViewNode', payload: node.id() });
+              this._event.next({
+                type: 'ViewNode',
+                payload: { id: node.id(), kind: node.data().kind },
+              });
             }
           },
         },
@@ -374,28 +382,7 @@ export class Drawer<
   setupEdgeHandles() {
     this._edgeHandles = this._cy.edgehandles({
       snap: true,
-      canConnect: (source, target) => {
-        if (
-          !target.isNode() ||
-          source.id() === target.id() ||
-          target.data().kind === 'group'
-        ) {
-          return false;
-        }
-
-        const element = this._cy.getElementById(
-          `${source.id()}/${target.id()}`
-        );
-
-        return element.id() === undefined;
-      },
-      edgeParams: (source, target) => {
-        return {
-          data: {
-            id: `${source.id()}/${target.id()}`,
-          },
-        };
-      },
+      canConnect: (source, target) => this.canConnectFn(source, target),
     });
   }
 
@@ -536,7 +523,7 @@ export class Drawer<
     this._cy.emit('local.edge-deleted', [edgeId]);
   }
 
-  handleEdgeAdded(edge: cytoscape.EdgeDataDefinition) {
+  handleEdgeAdded(edge: Edge) {
     this._cy.emit('server.edge-added', [edge]);
   }
 

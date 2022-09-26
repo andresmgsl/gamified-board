@@ -24,6 +24,7 @@ import {
   withLatestFrom,
 } from 'rxjs';
 import { environment } from '../../../environments/environment';
+import { DrawerStore } from '../../drawer/stores';
 import {
   AddNodeSuccessEvent,
   DeleteNodeSuccessEvent,
@@ -48,16 +49,22 @@ import {
   BackgroundImageMoveDirective,
   BackgroundImageZoomDirective,
 } from '../../shared/directives';
-import { isNotNull, isNull, Option } from '../../shared/utils';
+import {
+  generateId,
+  GetActiveTypes,
+  isNotNull,
+  isNull,
+  Option,
+} from '../../shared/utils';
 import { UpdateApplicationSubmit, UpdateWorkspaceSubmit } from '../components';
 import {
   ActiveApplicationComponent,
+  ActiveApplicationData,
   AddApplicationNodeDto,
   ApplicationDockComponent,
   WorkspaceDockComponent,
 } from '../sections';
-import { WorkspaceGraphApiService } from '../services';
-import { WorkspaceDrawerStore } from '../stores';
+import { WorkspaceApiService, WorkspaceGraphApiService } from '../services';
 import {
   WorkspaceGraphData,
   WorkspaceGraphKind,
@@ -67,14 +74,18 @@ import {
   WorkspaceNodesData,
 } from '../utils';
 
+type ActiveType = GetActiveTypes<{
+  application: ActiveApplicationData;
+}>;
+
 interface ViewModel {
-  isCreatingApplication: boolean;
+  active: Option<ActiveType>;
   workspaceId: Option<string>;
   selected: Option<WorkspaceNode>;
 }
 
 const initialState: ViewModel = {
-  isCreatingApplication: false,
+  active: null,
   workspaceId: null,
   selected: null,
 };
@@ -92,43 +103,61 @@ const initialState: ViewModel = {
       [pgPanValue]="(panDrag$ | ngrxPush) ?? { x: '0', y: '0' }"
     ></div>
 
-    <ng-container *ngrxLet="selected$; let selected">
-      <pg-workspace-dock
-        *ngIf="selected === null"
-        class="fixed bottom-0 -translate-x-1/2 left-1/2"
-        [pgWorkspace]="(workspace$ | ngrxPush) ?? null"
-        (pgApplicationActivate)="onApplicationActivate()"
-        (pgUpdateWorkspace)="onUpdateGraph($event.changes)"
-        (pgUpdateWorkspaceThumbnail)="
-          onUpdateGraphThumbnail($event.fileId, $event.fileUrl)
-        "
-        (pgDeleteWorkspace)="onDeleteGraph($event)"
-      ></pg-workspace-dock>
+    <ng-container *ngrxLet="workspace$; let workspace">
+      <ng-container *ngrxLet="selected$; let selected">
+        <pg-workspace-dock
+          *ngIf="workspace !== null && selected === null"
+          class="fixed bottom-0 -translate-x-1/2 left-1/2"
+          [pgWorkspace]="workspace"
+          (pgApplicationActivate)="
+            setActive({
+              kind: 'application',
+              data: {
+                thumbnailUrl: 'assets/generic/application.png'
+              }
+            })
+          "
+          (pgUpdateWorkspace)="onUpdateGraph($event.changes)"
+          (pgUpdateWorkspaceThumbnail)="
+            onUpdateGraphThumbnail($event.fileId, $event.fileUrl)
+          "
+          (pgDeleteWorkspace)="onDeleteGraph($event)"
+        ></pg-workspace-dock>
 
-      <pg-application-dock
-        *ngIf="selected !== null"
-        class="fixed bottom-0 -translate-x-1/2 left-1/2"
-        [pgApplication]="(selected$ | ngrxPush) ?? null"
-        (pgApplicationUnselected)="onApplicationUnselected()"
-        (pgUpdateApplication)="onUpdateNode($event.id, $event.changes)"
-        (pgUpdateApplicationThumbnail)="
-          onUpdateNodeThumbnail($event.id, $event.fileId, $event.fileUrl)
-        "
-        (pgDeleteApplication)="onRemoveNode($event)"
-      ></pg-application-dock>
+        <pg-application-dock
+          *ngIf="selected !== null && selected.kind === 'application'"
+          class="fixed bottom-0 -translate-x-1/2 left-1/2"
+          [pgApplication]="selected"
+          (pgApplicationUnselected)="onApplicationUnselected()"
+          (pgUpdateApplication)="onUpdateNode($event.id, $event.changes)"
+          (pgUpdateApplicationThumbnail)="
+            onUpdateNodeThumbnail($event.id, $event.fileId, $event.fileUrl)
+          "
+          (pgDeleteApplication)="onRemoveNode($event)"
+          (pgSaveCheckpoint)="
+            onSaveCheckpoint(
+              selected.data.workspaceId,
+              $event.id,
+              $event.checkpoint.name
+            )
+          "
+        ></pg-application-dock>
+      </ng-container>
+
+      <ng-container *ngrxLet="active$; let active">
+        <pg-active-application
+          *ngIf="
+            workspace !== null &&
+            active !== null &&
+            active.kind === 'application'
+          "
+          [pgActive]="active.data"
+          [pgClickEvent]="(drawerClick$ | ngrxPush) ?? null"
+          (pgAddNode)="onAddApplicationNode(workspace.id, $event)"
+          (pgDeactivate)="setActive(null)"
+        ></pg-active-application>
+      </ng-container>
     </ng-container>
-
-    <pg-active-application
-      *ngIf="workspace$ | ngrxPush as workspace"
-      [pgActive]="
-        (isCreatingApplication$ | ngrxPush)
-          ? { thumbnailUrl: 'assets/generic/application.png' }
-          : null
-      "
-      [pgClickEvent]="(drawerClick$ | ngrxPush) ?? null"
-      (pgAddNode)="onAddApplicationNode(workspace.id, $event)"
-      (pgDeactivate)="onApplicationDeactivate()"
-    ></pg-active-application>
   `,
   standalone: true,
   imports: [
@@ -141,20 +170,27 @@ const initialState: ViewModel = {
     BackgroundImageZoomDirective,
     BackgroundImageMoveDirective,
   ],
-  providers: [provideComponentStore(WorkspaceDrawerStore)],
+  providers: [provideComponentStore(DrawerStore)],
 })
 export class WorkspacePageComponent
   extends ComponentStore<ViewModel>
   implements OnInit, AfterViewInit
 {
   private readonly _router = inject(Router);
+  private readonly _workspaceApiService = inject(WorkspaceApiService);
   private readonly _workspaceGraphApiService = inject(WorkspaceGraphApiService);
   private readonly _activatedRoute = inject(ActivatedRoute);
-  private readonly _workspaceDrawerStore = inject(WorkspaceDrawerStore);
-
-  readonly isCreatingApplication$ = this.select(
-    ({ isCreatingApplication }) => isCreatingApplication
+  private readonly _workspaceDrawerStore = inject(
+    DrawerStore<
+      WorkspaceNodeKinds,
+      WorkspaceNodeData,
+      WorkspaceNodesData,
+      WorkspaceGraphKind,
+      WorkspaceGraphData
+    >
   );
+
+  readonly active$ = this.select(({ active }) => active);
   readonly selected$ = this.select(({ selected }) => selected);
   readonly workspaceId$ = this._activatedRoute.paramMap.pipe(
     map((paramMap) => paramMap.get('workspaceId'))
@@ -201,7 +237,14 @@ export class WorkspacePageComponent
     };
   });
 
-  private readonly _handleViewNode = this.effect<ViewNodeEvent>(
+  readonly setActive = this.updater<Option<ActiveType>>((state, active) => ({
+    ...state,
+    active,
+  }));
+
+  private readonly _handleViewNode = this.effect<
+    ViewNodeEvent<WorkspaceNodeKinds>
+  >(
     concatMap((event) =>
       of(null).pipe(
         withLatestFrom(this.workspaceId$),
@@ -211,7 +254,7 @@ export class WorkspacePageComponent
               '/workspaces',
               workspaceId,
               'applications',
-              event.payload,
+              event.payload.id,
             ]);
           }
         })
@@ -372,32 +415,33 @@ export class WorkspacePageComponent
     )
   );
 
-  private readonly _handleDeleteNodeSuccess =
-    this.effect<DeleteNodeSuccessEvent>(
-      concatMap((event) =>
-        of(null).pipe(
-          withLatestFrom(this.workspaceId$),
-          concatMap(([, workspaceId]) => {
-            if (isNull(workspaceId)) {
-              return EMPTY;
+  private readonly _handleDeleteNodeSuccess = this.effect<
+    DeleteNodeSuccessEvent<WorkspaceNodeKinds>
+  >(
+    concatMap((event) =>
+      of(null).pipe(
+        withLatestFrom(this.workspaceId$),
+        concatMap(([, workspaceId]) => {
+          if (isNull(workspaceId)) {
+            return EMPTY;
+          }
+
+          this.clearSelected(event.payload.id);
+
+          return this._workspaceGraphApiService.deleteNode(
+            environment.clientId,
+            event.payload.id,
+            {
+              graphId: workspaceId,
+              kind: event.payload.kind,
+              parentIds: [workspaceId],
+              referenceIds: [workspaceId, event.payload.id],
             }
-
-            this.clearSelected(event.payload.id);
-
-            return this._workspaceGraphApiService.deleteNode(
-              environment.clientId,
-              event.payload.id,
-              {
-                graphId: workspaceId,
-                kind: event.payload.kind,
-                parentIds: [workspaceId],
-                referenceIds: [workspaceId, event.payload.id],
-              }
-            );
-          })
-        )
+          );
+        })
       )
-    );
+    )
+  );
 
   private readonly _handleServerGraphUpdate = this.effect<Option<string>>(
     switchMap((workspaceId) => {
@@ -604,14 +648,6 @@ export class WorkspacePageComponent
     }
   }
 
-  onApplicationActivate() {
-    this.patchState({ isCreatingApplication: true });
-  }
-
-  onApplicationDeactivate() {
-    this.patchState({ isCreatingApplication: false });
-  }
-
   onApplicationUnselected() {
     this.patchState({ selected: null });
   }
@@ -662,5 +698,21 @@ export class WorkspacePageComponent
 
   onRemoveNode(nodeId: string) {
     this._workspaceDrawerStore.removeNode(nodeId);
+  }
+
+  onSaveCheckpoint(
+    workspaceId: string,
+    applicationId: string,
+    checkpointName: string
+  ) {
+    this._workspaceApiService
+      .saveCheckpoint(
+        environment.clientId,
+        generateId(),
+        workspaceId,
+        applicationId,
+        checkpointName
+      )
+      .subscribe();
   }
 }

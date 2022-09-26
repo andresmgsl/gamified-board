@@ -10,7 +10,11 @@ import {
 } from '@angular/core';
 import { ActivatedRoute, Router } from '@angular/router';
 import { LetModule, PushModule } from '@ngrx/component';
-import { ComponentStore, provideComponentStore } from '@ngrx/component-store';
+import {
+  ComponentStore,
+  provideComponentStore,
+  tapResponse,
+} from '@ngrx/component-store';
 import {
   concatMap,
   defer,
@@ -26,12 +30,17 @@ import {
 import { environment } from '../../../environments/environment';
 import { UpdateApplicationSubmit } from '../../application/components';
 import { UpdateCollectionSubmit } from '../../collection/components';
+import { DrawerStore } from '../../drawer/stores';
 import {
+  AddEdgeSuccessEvent,
   AddNodeSuccessEvent,
+  DeleteEdgeSuccessEvent,
   DeleteNodeSuccessEvent,
   Drawer,
+  isAddEdgeSuccessEvent,
   isAddNodeSuccessEvent,
   isClickEvent,
+  isDeleteEdgeSuccessEvent,
   isDeleteNodeSuccessEvent,
   isOneTapNodeEvent,
   isUpdateGraphSuccessEvent,
@@ -51,23 +60,32 @@ import {
   BackgroundImageMoveDirective,
   BackgroundImageZoomDirective,
 } from '../../shared/directives';
-import { isNotNull, isNull, Option } from '../../shared/utils';
+import { GetActiveTypes, isNotNull, isNull, Option } from '../../shared/utils';
 import {
   ActiveCollectionComponent,
+  ActiveCollectionData,
   ActiveFieldComponent,
+  ActiveFieldData,
   ActiveInstructionComponent,
+  ActiveInstructionData,
   AddCollectionNodeDto,
   AddFieldNodeDto,
   AddInstructionNodeDto,
   ApplicationDockComponent,
+  ApplicationsInventoryDirective,
   CollectionDockComponent,
   FieldDockComponent,
   InstructionDockComponent,
+  LeftDockComponent,
   RightDockComponent,
 } from '../sections';
-import { ApplicationGraphApiService } from '../services';
-import { ApplicationDrawerStore } from '../stores';
 import {
+  ApplicationApiService,
+  ApplicationGraphApiService,
+  InstallApplicationDto,
+} from '../services';
+import {
+  ApplicationCheckpoint,
   ApplicationGraphData,
   ApplicationGraphKind,
   ApplicationNode,
@@ -76,22 +94,29 @@ import {
   ApplicationNodesData,
   PartialApplicationNode,
 } from '../utils';
-import { applicationNodeLabelFunction } from '../utils/methods';
+import {
+  applicationCanConnectFunction,
+  applicationNodeLabelFunction,
+} from '../utils/methods';
+
+type ActiveType = GetActiveTypes<{
+  collection: ActiveCollectionData;
+  field: ActiveFieldData;
+  instruction: ActiveInstructionData;
+}>;
 
 interface ViewModel {
-  isCreatingField: boolean;
-  isCreatingCollection: boolean;
-  isCreatingInstruction: boolean;
+  active: Option<ActiveType>;
   applicationId: Option<string>;
   selected: Option<ApplicationNode>;
+  installations: { id: string; data: ApplicationCheckpoint }[];
 }
 
 const initialState: ViewModel = {
-  isCreatingField: false,
-  isCreatingCollection: false,
-  isCreatingInstruction: false,
+  active: null,
   applicationId: null,
   selected: null,
+  installations: [],
 };
 
 @Component({
@@ -107,119 +132,161 @@ const initialState: ViewModel = {
       [pgPanValue]="(panDrag$ | ngrxPush) ?? { x: '0', y: '0' }"
     ></div>
 
-    <ng-container *ngIf="(selected$ | ngrxPush) === null">
-      <pg-application-dock
-        *ngIf="application$ | ngrxPush as application"
-        class="fixed bottom-0 -translate-x-1/2 left-1/2"
-        [pgApplication]="application"
-        (pgActivateCollection)="onActivateCollection()"
-        (pgActivateInstruction)="onActivateInstruction()"
-        (pgUpdateApplication)="onUpdateGraph($event.changes)"
-        (pgUpdateApplicationThumbnail)="
-          onUpdateGraphThumbnail($event.fileId, $event.fileUrl)
+    <ng-container *ngrxLet="application$; let application">
+      <ng-container *ngrxLet="selected$; let selected">
+        <pg-application-dock
+          *ngIf="application !== null && selected === null"
+          class="fixed bottom-0 -translate-x-1/2 left-1/2"
+          [pgApplication]="application"
+          (pgActivateCollection)="
+            setActive({
+              kind: 'collection',
+              data: {
+                thumbnailUrl: 'assets/generic/collection.png'
+              }
+            })
+          "
+          (pgActivateInstruction)="
+            setActive({
+              kind: 'instruction',
+              data: {
+                thumbnailUrl: 'assets/generic/instruction.png'
+              }
+            })
+          "
+          (pgUpdateApplication)="onUpdateGraph($event.changes)"
+          (pgUpdateApplicationThumbnail)="
+            onUpdateGraphThumbnail($event.fileId, $event.fileUrl)
+          "
+          (pgDeleteApplication)="
+            onDeleteGraph(application.data.workspaceId, $event, 'application')
+          "
+        ></pg-application-dock>
+
+        <pg-collection-dock
+          *ngIf="selected !== null && selected.kind === 'collection'"
+          class="fixed bottom-0 -translate-x-1/2 left-1/2"
+          [pgCollection]="selected"
+          (pgCollectionUnselected)="onUnselect()"
+          (pgUpdateCollection)="
+            onUpdateNode($event.id, 'collection', $event.changes)
+          "
+          (pgUpdateCollectionThumbnail)="
+            onUpdateNodeThumbnail($event.id, $event.fileId, $event.fileUrl)
+          "
+          (pgDeleteCollection)="onRemoveNode($event)"
+        ></pg-collection-dock>
+
+        <pg-instruction-dock
+          *ngIf="selected !== null && selected.kind === 'instruction'"
+          class="fixed bottom-0 -translate-x-1/2 left-1/2"
+          [pgInstruction]="selected"
+          (pgInstructionUnselected)="onUnselect()"
+          (pgUpdateInstruction)="
+            onUpdateNode($event.id, 'instruction', $event.changes)
+          "
+          (pgUpdateInstructionThumbnail)="
+            onUpdateNodeThumbnail($event.id, $event.fileId, $event.fileUrl)
+          "
+          (pgDeleteInstruction)="onRemoveNode($event)"
+        ></pg-instruction-dock>
+
+        <pg-field-dock
+          *ngIf="selected !== null && selected.kind === 'field'"
+          class="fixed bottom-0 -translate-x-1/2 left-1/2"
+          [pgField]="selected"
+          (pgFieldUnselected)="onUnselect()"
+          (pgUpdateField)="onUpdateNode($event.id, 'field', $event.changes)"
+          (pgUpdateFieldThumbnail)="
+            onUpdateNodeThumbnail($event.id, $event.fileId, $event.fileUrl)
+          "
+          (pgDeleteField)="onRemoveNode($event)"
+        ></pg-field-dock>
+      </ng-container>
+
+      <pg-right-dock
+        class="fixed bottom-0 right-0"
+        *ngIf="application !== null"
+        (pgActivateField)="
+          setActive({
+            kind: 'field',
+            data: {
+              thumbnailUrl: 'assets/generic/field.png'
+            }
+          })
         "
-        (pgDeleteApplication)="
-          onDeleteGraph(application.data.workspaceId, $event, 'application')
-        "
-      ></pg-application-dock>
+        (pgToggleApplicationsInventoryModal)="applicationsInventory.toggle()"
+      >
+        <ng-container
+          pgApplicationsInventory
+          #applicationsInventory="modal"
+          [pgInstallations]="(installations$ | ngrxPush) ?? []"
+          (pgInstallApplication)="
+            onInstallApplication(
+              application.data.workspaceId,
+              application.id,
+              $event
+            )
+          "
+        ></ng-container>
+      </pg-right-dock>
+
+      <pg-left-dock
+        *ngrxLet="drawMode$; let drawMode"
+        class="fixed bottom-0 left-0"
+        (pgToggleDrawMode)="onSetDrawMode(!drawMode)"
+      ></pg-left-dock>
+
+      <ng-container *ngrxLet="active$; let active">
+        <pg-active-collection
+          *ngIf="
+            application !== null &&
+            active !== null &&
+            active.kind === 'collection'
+          "
+          [pgActive]="active.data"
+          [pgClickEvent]="(drawerClick$ | ngrxPush) ?? null"
+          (pgAddNode)="
+            onAddCollectionNode(
+              application.data.workspaceId,
+              application.id,
+              $event
+            )
+          "
+          (pgDeactivate)="setActive(null)"
+        ></pg-active-collection>
+
+        <pg-active-instruction
+          *ngIf="
+            application !== null &&
+            active !== null &&
+            active.kind === 'instruction'
+          "
+          [pgActive]="active.data"
+          [pgClickEvent]="(drawerClick$ | ngrxPush) ?? null"
+          (pgAddNode)="
+            onAddInstructionNode(
+              application.data.workspaceId,
+              application.id,
+              $event
+            )
+          "
+          (pgDeactivate)="setActive(null)"
+        ></pg-active-instruction>
+
+        <pg-active-field
+          *ngIf="
+            application !== null && active !== null && active.kind === 'field'
+          "
+          [pgActive]="active.data"
+          [pgClickEvent]="(drawerClick$ | ngrxPush) ?? null"
+          (pgAddNode)="
+            onAddFieldNode(application.data.workspaceId, application.id, $event)
+          "
+          (pgDeactivate)="setActive(null)"
+        ></pg-active-field>
+      </ng-container>
     </ng-container>
-
-    <ng-container *ngIf="selected$ | ngrxPush as selected">
-      <pg-collection-dock
-        *ngIf="selected.kind === 'collection'"
-        class="fixed bottom-0 -translate-x-1/2 left-1/2"
-        [pgCollection]="selected"
-        (pgCollectionUnselected)="onUnselect()"
-        (pgUpdateCollection)="
-          onUpdateNode($event.id, 'collection', $event.changes)
-        "
-        (pgUpdateCollectionThumbnail)="
-          onUpdateNodeThumbnail($event.id, $event.fileId, $event.fileUrl)
-        "
-        (pgDeleteCollection)="onRemoveNode($event)"
-      ></pg-collection-dock>
-
-      <pg-instruction-dock
-        *ngIf="selected.kind === 'instruction'"
-        class="fixed bottom-0 -translate-x-1/2 left-1/2"
-        [pgInstruction]="selected"
-        (pgInstructionUnselected)="onUnselect()"
-        (pgUpdateInstruction)="
-          onUpdateNode($event.id, 'instruction', $event.changes)
-        "
-        (pgUpdateInstructionThumbnail)="
-          onUpdateNodeThumbnail($event.id, $event.fileId, $event.fileUrl)
-        "
-        (pgDeleteInstruction)="onRemoveNode($event)"
-      ></pg-instruction-dock>
-
-      <pg-field-dock
-        *ngIf="selected.kind === 'field'"
-        class="fixed bottom-0 -translate-x-1/2 left-1/2"
-        [pgField]="selected"
-        (pgFieldUnselected)="onUnselect()"
-        (pgUpdateField)="onUpdateNode($event.id, 'field', $event.changes)"
-        (pgUpdateFieldThumbnail)="
-          onUpdateNodeThumbnail($event.id, $event.fileId, $event.fileUrl)
-        "
-        (pgDeleteField)="onRemoveNode($event)"
-      ></pg-field-dock>
-    </ng-container>
-
-    <pg-right-dock
-      class="fixed bottom-0 right-0"
-      (pgActivateField)="onActivateField()"
-    ></pg-right-dock>
-
-    <pg-active-collection
-      *ngIf="application$ | ngrxPush as application"
-      [pgActive]="
-        (isCreatingCollection$ | ngrxPush)
-          ? { thumbnailUrl: 'assets/generic/collection.png' }
-          : null
-      "
-      [pgClickEvent]="(drawerClick$ | ngrxPush) ?? null"
-      (pgAddNode)="
-        onAddCollectionNode(
-          application.data.workspaceId,
-          application.id,
-          $event
-        )
-      "
-      (pgDeactivate)="onDeactivateCollection()"
-    ></pg-active-collection>
-
-    <pg-active-instruction
-      *ngIf="application$ | ngrxPush as application"
-      [pgActive]="
-        (isCreatingInstruction$ | ngrxPush)
-          ? { thumbnailUrl: 'assets/generic/instruction.png' }
-          : null
-      "
-      [pgClickEvent]="(drawerClick$ | ngrxPush) ?? null"
-      (pgAddNode)="
-        onAddInstructionNode(
-          application.data.workspaceId,
-          application.id,
-          $event
-        )
-      "
-      (pgDeactivate)="onDeactivateInstruction()"
-    ></pg-active-instruction>
-
-    <pg-active-field
-      *ngIf="application$ | ngrxPush as application"
-      [pgActive]="
-        (isCreatingField$ | ngrxPush)
-          ? { thumbnailUrl: 'assets/generic/field.png' }
-          : null
-      "
-      [pgClickEvent]="(drawerClick$ | ngrxPush) ?? null"
-      (pgAddNode)="
-        onAddFieldNode(application.data.workspaceId, application.id, $event)
-      "
-      (pgDeactivate)="onDeactivateField()"
-    ></pg-active-field>
   `,
   standalone: true,
   imports: [
@@ -230,36 +297,40 @@ const initialState: ViewModel = {
     CollectionDockComponent,
     InstructionDockComponent,
     FieldDockComponent,
+    LeftDockComponent,
     RightDockComponent,
     ActiveCollectionComponent,
     ActiveInstructionComponent,
     ActiveFieldComponent,
+    ApplicationsInventoryDirective,
     BackgroundImageZoomDirective,
     BackgroundImageMoveDirective,
   ],
-  providers: [provideComponentStore(ApplicationDrawerStore)],
+  providers: [provideComponentStore(DrawerStore)],
 })
 export class ApplicationPageComponent
   extends ComponentStore<ViewModel>
   implements OnInit, AfterViewInit
 {
   private readonly _router = inject(Router);
+  private readonly _applicationApiService = inject(ApplicationApiService);
   private readonly _applicationGraphApiService = inject(
     ApplicationGraphApiService
   );
   private readonly _activatedRoute = inject(ActivatedRoute);
-  private readonly _applicationDrawerStore = inject(ApplicationDrawerStore);
+  private readonly _applicationDrawerStore = inject(
+    DrawerStore<
+      ApplicationNodeKinds,
+      ApplicationNodeData,
+      ApplicationNodesData,
+      ApplicationGraphKind,
+      ApplicationGraphData
+    >
+  );
 
-  readonly isCreatingField$ = this.select(
-    ({ isCreatingField }) => isCreatingField
-  );
-  readonly isCreatingCollection$ = this.select(
-    ({ isCreatingCollection }) => isCreatingCollection
-  );
-  readonly isCreatingInstruction$ = this.select(
-    ({ isCreatingInstruction }) => isCreatingInstruction
-  );
+  readonly active$ = this.select(({ active }) => active);
   readonly selected$ = this.select(({ selected }) => selected);
+  readonly installations$ = this.select(({ installations }) => installations);
   readonly workspaceId$ = this._activatedRoute.paramMap.pipe(
     map((paramMap) => paramMap.get('workspaceId'))
   );
@@ -272,6 +343,7 @@ export class ApplicationPageComponent
   );
   readonly zoomSize$ = this._applicationDrawerStore.zoomSize$;
   readonly panDrag$ = this._applicationDrawerStore.panDrag$;
+  readonly drawMode$ = this._applicationDrawerStore.drawMode$;
 
   @HostBinding('class') class = 'block relative min-h-screen min-w-screen';
   @ViewChild('drawerElement')
@@ -316,17 +388,30 @@ export class ApplicationPageComponent
     selected: event.payload,
   }));
 
-  private readonly _handleViewNode = this.effect<ViewNodeEvent>(
+  readonly setActive = this.updater<Option<ActiveType>>((state, active) => ({
+    ...state,
+    active,
+  }));
+
+  private readonly _handleViewNode = this.effect<
+    ViewNodeEvent<ApplicationNodeKinds>
+  >(
     concatMap((event) =>
       of(null).pipe(
-        withLatestFrom(this.applicationId$),
-        tap(([, applicationId]) => {
-          if (isNotNull(applicationId)) {
+        withLatestFrom(this.workspaceId$, this.applicationId$),
+        tap(([, workspaceId, applicationId]) => {
+          if (
+            isNotNull(workspaceId) &&
+            isNotNull(applicationId) &&
+            event.payload.kind === 'instruction'
+          ) {
             this._router.navigate([
-              '/applications',
-              applicationId,
+              '/workspaces',
+              workspaceId,
               'applications',
-              event.payload,
+              applicationId,
+              'instructions',
+              event.payload.id,
             ]);
           }
         })
@@ -435,8 +520,6 @@ export class ApplicationPageComponent
             return EMPTY;
           }
 
-          console.log(event);
-
           this.patchSelected(event.payload);
 
           return this._applicationGraphApiService.updateNode(
@@ -491,26 +574,76 @@ export class ApplicationPageComponent
     )
   );
 
-  private readonly _handleDeleteNodeSuccess =
-    this.effect<DeleteNodeSuccessEvent>(
+  private readonly _handleDeleteNodeSuccess = this.effect<
+    DeleteNodeSuccessEvent<ApplicationNodeKinds>
+  >(
+    concatMap((event) =>
+      of(null).pipe(
+        withLatestFrom(this.workspaceId$, this.applicationId$),
+        concatMap(([, workspaceId, applicationId]) => {
+          if (isNull(workspaceId) || isNull(applicationId)) {
+            return EMPTY;
+          }
+
+          this.clearSelected(event.payload.id);
+
+          return this._applicationGraphApiService.deleteNode(
+            environment.clientId,
+            event.payload.id,
+            {
+              graphId: applicationId,
+              kind: event.payload.kind,
+              parentIds: [workspaceId, applicationId],
+              referenceIds: [applicationId, event.payload.id],
+            }
+          );
+        })
+      )
+    )
+  );
+
+  private readonly _handleAddEdgeSuccess = this.effect<AddEdgeSuccessEvent>(
+    concatMap((event) =>
+      of(null).pipe(
+        withLatestFrom(this.workspaceId$, this.applicationId$),
+        concatMap(([, workspaceId, applicationId]) => {
+          if (isNull(applicationId) || isNull(workspaceId)) {
+            return EMPTY;
+          }
+
+          return this._applicationGraphApiService.createEdge(
+            environment.clientId,
+            {
+              id: event.payload.id,
+              source: event.payload.source,
+              target: event.payload.target,
+              parentIds: [workspaceId, applicationId],
+              graphId: applicationId,
+              referenceIds: [applicationId, event.payload.id],
+            }
+          );
+        })
+      )
+    )
+  );
+
+  private readonly _handleDeleteEdgeSuccess =
+    this.effect<DeleteEdgeSuccessEvent>(
       concatMap((event) =>
         of(null).pipe(
           withLatestFrom(this.workspaceId$, this.applicationId$),
           concatMap(([, workspaceId, applicationId]) => {
-            if (isNull(workspaceId) || isNull(applicationId)) {
+            if (isNull(applicationId) || isNull(workspaceId)) {
               return EMPTY;
             }
 
-            this.clearSelected(event.payload.id);
-
-            return this._applicationGraphApiService.deleteNode(
+            return this._applicationGraphApiService.deleteEdge(
               environment.clientId,
-              event.payload.id,
+              event.payload,
               {
-                graphId: applicationId,
-                kind: event.payload.kind,
                 parentIds: [workspaceId, applicationId],
-                referenceIds: [applicationId, event.payload.id],
+                graphId: applicationId,
+                referenceIds: [applicationId, event.payload],
               }
             );
           })
@@ -658,6 +791,55 @@ export class ApplicationPageComponent
     })
   );
 
+  private readonly _handleServerEdgeCreate = this.effect<{
+    workspaceId: Option<string>;
+    applicationId: Option<string>;
+  }>(
+    switchMap(({ workspaceId, applicationId }) => {
+      if (isNull(workspaceId) || isNull(applicationId)) {
+        return EMPTY;
+      }
+
+      return this._applicationGraphApiService
+        .listen(workspaceId, applicationId, ['createEdgeSuccess'])
+        .pipe(
+          filter((event) => event['clientId'] !== environment.clientId),
+          tap((event) =>
+            this._applicationDrawerStore.handleEdgeAdded(event['payload'])
+          )
+        );
+    })
+  );
+
+  private readonly _handleServerEdgeDelete = this.effect<{
+    workspaceId: Option<string>;
+    applicationId: Option<string>;
+  }>(
+    switchMap(({ workspaceId, applicationId }) => {
+      if (isNull(workspaceId) || isNull(applicationId)) {
+        return EMPTY;
+      }
+
+      return this._applicationGraphApiService
+        .listen(workspaceId, applicationId, ['deleteEdgeSuccess'])
+        .pipe(
+          tap((event) => {
+            if (event['payload'].id === applicationId) {
+              this._router.navigate(['/workspaces', workspaceId]);
+            }
+
+            this.clearSelected(event['payload'].id);
+
+            if (event['clientId'] !== environment.clientId) {
+              this._applicationDrawerStore.handleEdgeRemoved(
+                event['payload'].id
+              );
+            }
+          })
+        );
+    })
+  );
+
   private readonly _loadDrawer = this.effect<{
     workspaceId: Option<string>;
     applicationId: Option<string>;
@@ -679,6 +861,7 @@ export class ApplicationPageComponent
                 graph.nodes,
                 [],
                 drawerElement,
+                applicationCanConnectFunction,
                 applicationNodeLabelFunction
               );
               drawer.initialize();
@@ -689,8 +872,35 @@ export class ApplicationPageComponent
               this._handleServerNodeCreate({ workspaceId, applicationId });
               this._handleServerNodeUpdate({ workspaceId, applicationId });
               this._handleServerNodeDelete({ workspaceId, applicationId });
+              this._handleServerEdgeCreate({ workspaceId, applicationId });
+              this._handleServerEdgeDelete({ workspaceId, applicationId });
             }
           })
+        )
+      );
+    })
+  );
+
+  private readonly _loadInstallations = this.effect<{
+    workspaceId: Option<string>;
+    applicationId: Option<string>;
+  }>(
+    concatMap(({ workspaceId, applicationId }) => {
+      if (isNull(workspaceId) || isNull(applicationId)) {
+        return EMPTY;
+      }
+
+      return defer(() =>
+        from(
+          this._applicationApiService.getApplicationInstallations(
+            workspaceId,
+            applicationId
+          )
+        ).pipe(
+          tapResponse(
+            (installations) => this.patchState({ installations }),
+            (error) => console.error(error)
+          )
         )
       );
     })
@@ -731,6 +941,22 @@ export class ApplicationPageComponent
     this.setSelected(
       this._applicationDrawerStore.event$.pipe(filter(isOneTapNodeEvent))
     );
+    this._handleAddEdgeSuccess(
+      this._applicationDrawerStore.event$.pipe(filter(isAddEdgeSuccessEvent))
+    );
+    this._handleDeleteEdgeSuccess(
+      this._applicationDrawerStore.event$.pipe(filter(isDeleteEdgeSuccessEvent))
+    );
+    this._loadInstallations(
+      this.select(
+        this.workspaceId$,
+        this.applicationId$,
+        (workspaceId, applicationId) => ({
+          workspaceId,
+          applicationId,
+        })
+      )
+    );
   }
 
   async ngAfterViewInit() {
@@ -751,44 +977,27 @@ export class ApplicationPageComponent
     }
   }
 
-  onActivateField() {
-    this.patchState({
-      isCreatingField: true,
-      isCreatingCollection: false,
-      isCreatingInstruction: false,
-    });
-  }
-
-  onDeactivateField() {
-    this.patchState({ isCreatingField: false });
-  }
-
-  onActivateCollection() {
-    this.patchState({
-      isCreatingCollection: true,
-      isCreatingInstruction: false,
-      isCreatingField: false,
-    });
-  }
-
-  onDeactivateCollection() {
-    this.patchState({ isCreatingCollection: false });
-  }
-
-  onActivateInstruction() {
-    this.patchState({
-      isCreatingInstruction: true,
-      isCreatingCollection: false,
-      isCreatingField: false,
-    });
-  }
-
-  onDeactivateInstruction() {
-    this.patchState({ isCreatingInstruction: false });
+  onInstallApplication(
+    workspaceId: string,
+    applicationId: string,
+    payload: InstallApplicationDto
+  ) {
+    this._applicationApiService
+      .installApplication(
+        environment.clientId,
+        workspaceId,
+        applicationId,
+        payload
+      )
+      .subscribe();
   }
 
   onUnselect() {
     this.patchState({ selected: null });
+  }
+
+  onSetDrawMode(drawMode: boolean) {
+    this._applicationDrawerStore.setDrawMode(drawMode);
   }
 
   onAddInstructionNode(

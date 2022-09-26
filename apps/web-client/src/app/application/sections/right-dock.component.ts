@@ -1,6 +1,5 @@
 import { CommonModule } from '@angular/common';
 import { Component, EventEmitter, Output } from '@angular/core';
-import { LetModule, PushModule } from '@ngrx/component';
 import {
   CornerDockComponent,
   SquareButtonComponent,
@@ -19,7 +18,7 @@ import { KeyListenerDirective } from '../../shared/directives';
         <span
           class="absolute left-0 top-0 px-1 py-0.5 text-white bg-black bg-opacity-60 z-10 uppercase"
           style="font-size: 0.5rem; line-height: 0.5rem"
-          [pgKeyListener]="'Comma'"
+          pgKeyListener="Comma"
           (pgKeyDown)="onActivateField()"
         >
           ,
@@ -30,29 +29,41 @@ import { KeyListenerDirective } from '../../shared/directives';
           (click)="onActivateField()"
         ></pg-square-button>
       </div>
+
+      <div class="bg-gray-800 relative w-[2.89rem] h-[2.89rem]">
+        <span
+          class="absolute left-0 top-0 px-1 py-0.5 text-white bg-black bg-opacity-60 z-10 uppercase"
+          style="font-size: 0.5rem; line-height: 0.5rem"
+          pgKeyListener="Period"
+          (pgKeyDown)="onToggleApplicationsInventoryModal()"
+        >
+          .
+        </span>
+
+        <pg-square-button
+          pgThumbnailUrl="assets/generic/instruction.png"
+          (click)="onToggleApplicationsInventoryModal()"
+        ></pg-square-button>
+      </div>
     </pg-corner-dock>
   `,
   standalone: true,
   imports: [
     CommonModule,
-    LetModule,
-    PushModule,
     SquareButtonComponent,
     CornerDockComponent,
     KeyListenerDirective,
   ],
-  styles: [
-    `
-      .cdk-drop-list-dragging:hover {
-        @apply bg-gray-700;
-      }
-    `,
-  ],
 })
 export class RightDockComponent {
   @Output() pgActivateField = new EventEmitter();
+  @Output() pgToggleApplicationsInventoryModal = new EventEmitter();
 
   onActivateField() {
     this.pgActivateField.emit();
+  }
+
+  onToggleApplicationsInventoryModal() {
+    this.pgToggleApplicationsInventoryModal.emit();
   }
 }

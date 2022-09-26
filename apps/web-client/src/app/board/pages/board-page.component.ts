@@ -11,11 +11,7 @@ import { ActivatedRoute, RouterModule } from '@angular/router';
 import { PushModule } from '@ngrx/component';
 import { provideComponentStore } from '@ngrx/component-store';
 import { map } from 'rxjs';
-import {
-  ActiveApplicationComponent,
-  ApplicationDockComponent,
-  ApplicationsInventoryComponent,
-} from '../../application/sections';
+import { ApplicationDockComponent } from '../../application/sections';
 import { ApplicationsStore } from '../../application/stores';
 import {
   ActiveCollectionComponent,
@@ -120,12 +116,12 @@ import { ActiveStore, BoardStore } from '../stores';
       class="fixed -left-4 top-24"
     ></pg-instructions-inventory>
 
-    <pg-applications-inventory
+    <!-- <pg-applications-inventory
       *ngIf="isApplicationsSectionOpen$ | ngrxPush"
       class="fixed -left-4 top-24"
-    ></pg-applications-inventory>
+    ></pg-applications-inventory> -->
 
-    <pg-active-application></pg-active-application>
+    <!-- <pg-active-application></pg-active-application> -->
     <pg-active-collection></pg-active-collection>
     <pg-active-instruction></pg-active-instruction>
     <pg-active-sysvar></pg-active-sysvar>
@@ -145,7 +141,7 @@ import { ActiveStore, BoardStore } from '../stores';
     CollectionDockComponent,
     InstructionsInventoryComponent,
     InstructionDockComponent,
-    ApplicationsInventoryComponent,
+    // ApplicationsInventoryComponent,
     ApplicationDockComponent,
     InstructionDocumentDockComponent,
     InstructionTaskDockComponent,
@@ -154,7 +150,7 @@ import { ActiveStore, BoardStore } from '../stores';
     InstructionSignerDockComponent,
     SysvarsInventoryComponent,
     SysvarDockComponent,
-    ActiveApplicationComponent,
+    // ActiveApplicationComponent,
     ActiveCollectionComponent,
     ActiveInstructionComponent,
     ActiveSysvarComponent,
