@@ -6,8 +6,8 @@
 @import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400&display=swap');
 
 @font-face {
-  font-family: 'CaptureIt';
-  src: url('./assets/fonts/CaptureIt.ttf');
+  font-family: 'Tunning';
+  src: url('./assets/fonts/Tunning-OxideBold.ttf');
 }
 
 @font-face {
@@ -16,10 +16,9 @@
 }
 
 .bp-font-game-title {
-  font-family: 'CaptureIt' !important;
+  font-family: 'Tunning' !important;
 }
-
-.bp-font-game {
+v .bp-font-game {
   font-family: 'Space Grotesk' !important;
 }
 
@@ -217,7 +216,7 @@ body,
   -moz-box-shadow: 0px 7px 10px 1px rgba(0, 0, 0, 0.5);
   box-shadow: 0px 7px 10px 1px rgba(0, 0, 0, 0.5);
   color: white;
-  font-family: 'CaptureIt' !important;
+  font-family: 'Tunning' !important;
   border: 2px solid #515153;
 }
 
@@ -499,4 +498,81 @@ body,
 
 .tooltip-boards-heigh {
   height: calc(100% - 40px) !important;
+}
+
+// NEW THEME //
+.bp-skin-moba-sidebar {
+  background-image: url('./assets/skins/MOBA/sidebar-background.png');
+  background-repeat: repeat;
+  width: 300px;
+  background-size: cover;
+}
+
+.bp-skin-moba-divider {
+  background-image: url('./assets/skins/MOBA/divider.png');
+  background-repeat: no-repeat;
+  height: 14px;
+  width: calc(100% - 12px);
+  left: 0px;
+  right: 0px;
+  margin: 0 auto;
+  position: relative;
+}
+
+.bp-skin-moba-navigation-right-arrow {
+  background-image: url('./assets/skins/MOBA/arrow.png');
+  background-repeat: no-repeat;
+  width: 30px;
+  height: 30px;
+  background-size: cover;
+}
+
+.bp-skin-moba-navigation-right-arrow:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.bp-skin-moba-navigation-left-arrow {
+  background-image: url('./assets/skins/MOBA/arrow.png');
+  background-repeat: no-repeat;
+  width: 30px;
+  height: 30px;
+  background-size: cover;
+  transform: scaleX(-1);
+}
+
+.bp-skin-moba-navigation-left-arrow:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.bp-skin-moba-dock-corner {
+  background-image: url('./assets/skins/MOBA/corner-dock.png');
+  background-repeat: no-repeat;
+  min-width: 100px;
+  padding-top: 25px;
+}
+
+.bp-skin-moba-dock-center {
+  background-image: url('./assets/skins/MOBA/center-dock.png');
+  background-repeat: no-repeat;
+  padding-top: 25px;
+  background-size: cover;
+}
+
+.bp-skin-moba-modal {
+  background-image: url('./assets/skins/MOBA/modal.png');
+  background-repeat: no-repeat;
+  padding: 40px;
+  background-size: contain;
+  width: 450px;
+  height: 430px;
+}
+
+.bp-skin-moba-button-close {
+  background-image: url('./assets/skins/MOBA/close.png');
+  background-repeat: no-repeat;
+  width: 30px;
+  height: 30px;
+  background-size: cover;
 }

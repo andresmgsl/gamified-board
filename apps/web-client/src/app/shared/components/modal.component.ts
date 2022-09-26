@@ -6,37 +6,9 @@ import { Component, EventEmitter, HostBinding, Output } from '@angular/core';
   template: `
     <!-- close button -->
     <button
-      class="bp-button-close-futuristic outline-0 absolute right-2.5 top-5 z-40"
+      class="bp-skin-moba-button-close outline-0 absolute right-5 top-5 z-40"
       (click)="onClose()"
     ></button>
-
-    <!-- outer corners-->
-    <div
-      class="bp-skin-outer-metal-corner-left-top absolute -left-5 -top-4 z-30"
-    ></div>
-    <div
-      class="bp-skin-outer-metal-corner-right-top absolute -right-5 -top-4 z-30"
-    ></div>
-    <div
-      class="bp-skin-outer-metal-corner-left-bottom absolute -left-5 -bottom-4 z-50"
-    ></div>
-    <div
-      class="bp-skin-outer-metal-corner-right-bottom absolute -right-5 -bottom-4 z-50"
-    ></div>
-
-    <!-- outer borders -->
-    <div
-      class="bp-skin-outer-metal-border-right absolute -right-5 h-[70%] top-0 bottom-0 my-auto mx-0 z-20 rounded-2xl"
-    ></div>
-    <div
-      class="bp-skin-outer-metal-border-left absolute -left-5 h-[70%] top-0 bottom-0 my-auto mx-0 z-20 rounded-2xl"
-    ></div>
-    <div
-      class="bp-skin-outer-metal-border-bottom absolute -bottom-4 w-5/6 left-0 right-0 mx-auto my-0 z-40 rounded-2xl"
-    ></div>
-    <div
-      class="bp-skin-outer-metal-border-top absolute -top-4 w-5/6 left-0 right-0 mx-auto my-0 z-20 rounded-2xl"
-    ></div>
 
     <!-- modal content -->
     <div class="z-30 w-full relative">
@@ -48,7 +20,7 @@ import { Component, EventEmitter, HostBinding, Output } from '@angular/core';
 })
 export class ModalComponent {
   @HostBinding('class') class =
-    'flex bp-bg-yellow-texture shadow-xl relative px-12 pt-14 box-border rounded-[35px]';
+    'flex bp-skin-moba-modal shadow-xl relative px-12 pt-14';
 
   @Output() pgCloseModal = new EventEmitter();
 
