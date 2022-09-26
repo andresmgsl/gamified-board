@@ -81,10 +81,7 @@ export class ApplicationsInventoryDirective implements OnDestroy {
     new Subject<InstallApplicationPayload>();
   private readonly _tapInstallation = new Subject<Installation>();
 
-  @Input() pgInstallations: {
-    id: string;
-    data: ApplicationCheckpoint;
-  }[] = [];
+  @Input() pgInstallations: Installation[] = [];
 
   @Output() pgInstallApplication = this._installApplication.asObservable();
   @Output() pgTapInstallation = this._tapInstallation.asObservable();
@@ -141,7 +138,7 @@ export class ApplicationsInventoryDirective implements OnDestroy {
 }
 
 @Component({
-  selector: 'pg-installable-applications-inventory',
+  selector: 'pg-applications-inventory',
   template: `
     <pg-inventory
       class="mt-10 min-w-[300px] min-h-[520px] max-h-[520px]"

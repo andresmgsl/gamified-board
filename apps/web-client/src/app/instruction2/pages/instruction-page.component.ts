@@ -10,11 +10,7 @@ import {
 } from '@angular/core';
 import { ActivatedRoute, Router } from '@angular/router';
 import { LetModule, PushModule } from '@ngrx/component';
-import {
-  ComponentStore,
-  provideComponentStore,
-  tapResponse,
-} from '@ngrx/component-store';
+import { ComponentStore, provideComponentStore } from '@ngrx/component-store';
 import {
   concatMap,
   defer,
@@ -33,7 +29,7 @@ import {
   ApplicationApiService,
   InstallApplicationDto,
 } from '../../application/services';
-import { ApplicationCheckpoint } from '../../application/utils';
+import { CollectionsStore, InstallationsStore } from '../../application/stores';
 import { UpdateCollectionSubmit } from '../../collection/components';
 import { DrawerStore } from '../../drawer/stores';
 import {
@@ -68,39 +64,49 @@ import { GetActiveTypes, isNotNull, isNull, Option } from '../../shared/utils';
 import {
   ActiveApplicationComponent,
   ActiveApplicationData,
+  ActiveCollectionComponent,
+  ActiveCollectionData,
   ActiveSignerComponent,
   ActiveSignerData,
+  ActiveSysvarComponent,
+  ActiveSysvarData,
   AddApplicationNodeDto,
+  AddCollectionNodeDto,
   AddSignerNodeDto,
+  AddSysvarNodeDto,
   ApplicationDockComponent,
+  CollectionDockComponent,
+  CollectionsInventoryDirective,
   InstructionDockComponent,
+  LeftDockComponent,
   RightDockComponent,
   SignerDockComponent,
+  SysvarDockComponent,
+  SysvarsInventoryDirective,
 } from '../sections';
 import { InstructionGraphApiService } from '../services';
 import {
+  instructionCanConnectFunction,
   InstructionGraphData,
   InstructionGraphKind,
   InstructionNode,
   InstructionNodeData,
   InstructionNodeKinds,
+  instructionNodeLabelFunction,
   InstructionNodesData,
   PartialInstructionNode,
 } from '../utils';
-import {
-  instructionCanConnectFunction,
-  instructionNodeLabelFunction,
-} from '../utils/methods';
 
 type ActiveType = GetActiveTypes<{
   signer: ActiveSignerData;
   application: ActiveApplicationData;
+  sysvar: ActiveSysvarData;
+  collection: ActiveCollectionData;
 }>;
 
 interface ViewModel {
   instructionId: Option<string>;
   selected: Option<InstructionNode>;
-  installations: { id: string; data: ApplicationCheckpoint }[];
   active: Option<ActiveType>;
 }
 
@@ -108,7 +114,6 @@ const initialState: ViewModel = {
   instructionId: null,
   selected: null,
   active: null,
-  installations: [],
 };
 
 @Component({
@@ -175,12 +180,39 @@ const initialState: ViewModel = {
           "
           (pgDeleteApplication)="onRemoveNode($event)"
         ></pg-application-dock>
+
+        <pg-sysvar-dock
+          *ngIf="selected !== null && selected.kind === 'sysvar'"
+          class="fixed bottom-0 -translate-x-1/2 left-1/2"
+          [pgSysvar]="selected"
+          (pgSysvarUnselected)="onUnselect()"
+          (pgUpdateSysvar)="onUpdateNode($event.id, 'sysvar', $event.changes)"
+          (pgUpdateSysvarThumbnail)="
+            onUpdateNodeThumbnail($event.id, $event.fileId, $event.fileUrl)
+          "
+          (pgDeleteSysvar)="onRemoveNode($event)"
+        ></pg-sysvar-dock>
+
+        <pg-collection-dock
+          *ngIf="selected !== null && selected.kind === 'collection'"
+          class="fixed bottom-0 -translate-x-1/2 left-1/2"
+          [pgCollection]="selected"
+          (pgCollectionUnselected)="onUnselect()"
+          (pgUpdateCollection)="
+            onUpdateNode($event.id, 'collection', $event.changes)
+          "
+          (pgUpdateCollectionThumbnail)="
+            onUpdateNodeThumbnail($event.id, $event.fileId, $event.fileUrl)
+          "
+          (pgDeleteCollection)="onRemoveNode($event)"
+        ></pg-collection-dock>
       </ng-container>
 
       <pg-right-dock
         class="fixed bottom-0 right-0"
-        *ngIf="instruction$ | ngrxPush as instruction"
+        *ngIf="instruction !== null"
         (pgToggleApplicationsInventoryModal)="applicationsInventory.toggle()"
+        (pgToggleSysvarsInventoryModal)="sysvarsInventory.toggle()"
       >
         <ng-container
           pgApplicationsInventory
@@ -204,7 +236,43 @@ const initialState: ViewModel = {
             })
           "
         ></ng-container>
+
+        <ng-container
+          pgSysvarsInventory
+          #sysvarsInventory="modal"
+          (pgTapSysvar)="
+            setActive({
+              kind: 'sysvar',
+              data: {
+                name: $event.name,
+                thumbnailUrl: $event.thumbnailUrl
+              }
+            })
+          "
+        ></ng-container>
       </pg-right-dock>
+
+      <pg-left-dock
+        class="fixed bottom-0 left-0"
+        *ngIf="instruction$ | ngrxPush as instruction"
+        (pgToggleCollectionsInventoryModal)="collectionsInventory.toggle()"
+      >
+        <ng-container
+          pgCollectionsInventory
+          #collectionsInventory="modal"
+          [pgCollections]="(collections$ | ngrxPush) ?? []"
+          (pgTapCollection)="
+            setActive({
+              kind: 'collection',
+              data: {
+                id: $event.id,
+                name: $event.data.name,
+                thumbnailUrl: $event.data.thumbnailUrl
+              }
+            })
+          "
+        ></ng-container>
+      </pg-left-dock>
 
       <ng-container *ngrxLet="active$; let active">
         <pg-active-signer
@@ -242,6 +310,42 @@ const initialState: ViewModel = {
           "
           (pgDeactivate)="setActive(null)"
         ></pg-active-application>
+
+        <pg-active-sysvar
+          *ngIf="
+            instruction !== null && active !== null && active.kind === 'sysvar'
+          "
+          [pgActive]="active.data"
+          [pgClickEvent]="(drawerClick$ | ngrxPush) ?? null"
+          (pgAddNode)="
+            onAddSysvarNode(
+              instruction.data.workspaceId,
+              instruction.data.applicationId,
+              instruction.id,
+              $event
+            )
+          "
+          (pgDeactivate)="setActive(null)"
+        ></pg-active-sysvar>
+
+        <pg-active-collection
+          *ngIf="
+            instruction !== null &&
+            active !== null &&
+            active.kind === 'collection'
+          "
+          [pgActive]="active.data"
+          [pgClickEvent]="(drawerClick$ | ngrxPush) ?? null"
+          (pgAddNode)="
+            onAddCollectionNode(
+              instruction.data.workspaceId,
+              instruction.data.applicationId,
+              instruction.id,
+              $event
+            )
+          "
+          (pgDeactivate)="setActive(null)"
+        ></pg-active-collection>
       </ng-container>
     </ng-container>
   `,
@@ -253,14 +357,25 @@ const initialState: ViewModel = {
     BackgroundImageZoomDirective,
     BackgroundImageMoveDirective,
     ApplicationsInventoryDirective,
+    SysvarsInventoryDirective,
+    CollectionsInventoryDirective,
     InstructionDockComponent,
     SignerDockComponent,
+    SysvarDockComponent,
+    CollectionDockComponent,
     ApplicationDockComponent,
     RightDockComponent,
+    LeftDockComponent,
     ActiveSignerComponent,
     ActiveApplicationComponent,
+    ActiveSysvarComponent,
+    ActiveCollectionComponent,
   ],
-  providers: [provideComponentStore(DrawerStore)],
+  providers: [
+    provideComponentStore(DrawerStore),
+    provideComponentStore(InstallationsStore),
+    provideComponentStore(CollectionsStore),
+  ],
 })
 export class InstructionPageComponent
   extends ComponentStore<ViewModel>
@@ -277,6 +392,8 @@ export class InstructionPageComponent
       InstructionGraphData
     >
   );
+  private readonly _installationsStore = inject(InstallationsStore);
+  private readonly _collectionsStore = inject(CollectionsStore);
   private readonly _applicationApiService = inject(ApplicationApiService);
   private readonly _instructionGraphApiService = inject(
     InstructionGraphApiService
@@ -293,7 +410,8 @@ export class InstructionPageComponent
   );
   readonly selected$ = this.select(({ selected }) => selected);
   readonly active$ = this.select(({ active }) => active);
-  readonly installations$ = this.select(({ installations }) => installations);
+  readonly installations$ = this._installationsStore.installations$;
+
   readonly instruction$ = this._instructionDrawerStore.graph$;
   readonly drawerClick$ = this._instructionDrawerStore.event$.pipe(
     filter(isClickEvent)
@@ -301,6 +419,17 @@ export class InstructionPageComponent
   readonly zoomSize$ = this._instructionDrawerStore.zoomSize$;
   readonly panDrag$ = this._instructionDrawerStore.panDrag$;
   readonly drawMode$ = this._instructionDrawerStore.drawMode$;
+  readonly collections$ = this.select(
+    this._collectionsStore.collections$,
+    this._installationsStore.collections$,
+    (collections, installedCollections) => {
+      if (isNull(collections) || isNull(installedCollections)) {
+        return [];
+      }
+
+      return collections.concat(installedCollections);
+    }
+  );
 
   @HostBinding('class') class = 'block relative min-h-screen min-w-screen';
   @ViewChild('drawerElement')
@@ -970,31 +1099,6 @@ export class InstructionPageComponent
     )
   );
 
-  private readonly _loadInstallations = this.effect<{
-    workspaceId: Option<string>;
-    applicationId: Option<string>;
-  }>(
-    concatMap(({ workspaceId, applicationId }) => {
-      if (isNull(workspaceId) || isNull(applicationId)) {
-        return EMPTY;
-      }
-
-      return defer(() =>
-        from(
-          this._applicationApiService.getApplicationInstallations(
-            workspaceId,
-            applicationId
-          )
-        ).pipe(
-          tapResponse(
-            (installations) => this.patchState({ installations }),
-            (error) => console.error(error)
-          )
-        )
-      );
-    })
-  );
-
   constructor() {
     super(initialState);
   }
@@ -1033,16 +1137,10 @@ export class InstructionPageComponent
     this._handleDeleteEdgeSuccess(
       this._instructionDrawerStore.event$.pipe(filter(isDeleteEdgeSuccessEvent))
     );
-    this._loadInstallations(
-      this.select(
-        this.workspaceId$,
-        this.applicationId$,
-        (workspaceId, applicationId) => ({
-          workspaceId,
-          applicationId,
-        })
-      )
-    );
+    this._installationsStore.setWorkspaceId(this.workspaceId$);
+    this._installationsStore.setApplicationId(this.applicationId$);
+    this._collectionsStore.setWorkspaceId(this.workspaceId$);
+    this._collectionsStore.setApplicationId(this.applicationId$);
   }
 
   async ngAfterViewInit() {
@@ -1122,6 +1220,46 @@ export class InstructionPageComponent
     applicationId: string,
     instructionId: string,
     { payload, options }: AddApplicationNodeDto
+  ) {
+    this._instructionDrawerStore.addNode(
+      {
+        ...payload,
+        data: {
+          ...payload.data,
+          workspaceId,
+          applicationId,
+          instructionId,
+        },
+      },
+      options.position
+    );
+  }
+
+  onAddSysvarNode(
+    workspaceId: string,
+    applicationId: string,
+    instructionId: string,
+    { payload, options }: AddSysvarNodeDto
+  ) {
+    this._instructionDrawerStore.addNode(
+      {
+        ...payload,
+        data: {
+          ...payload.data,
+          workspaceId,
+          applicationId,
+          instructionId,
+        },
+      },
+      options.position
+    );
+  }
+
+  onAddCollectionNode(
+    workspaceId: string,
+    applicationId: string,
+    instructionId: string,
+    { payload, options }: AddCollectionNodeDto
   ) {
     this._instructionDrawerStore.addNode(
       {
