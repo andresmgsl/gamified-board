@@ -191,7 +191,7 @@ export class UpdateFieldModalDirective {
         <div class="flex justify-center items-center mt-10 mb-14">
           <button
             type="submit"
-            class="bp-button-futuristic text-black bp-font-game uppercase"
+            class="bp-skin-moba-button text-black bp-font-game uppercase"
           >
             {{ field === null ? 'Send' : 'Save' }}
           </button>

@@ -55,10 +55,6 @@ interface HotKey {
             </ng-container>
 
             <div
-              class="bp-skin-dock-icon-border absolute -top-0.5 -left-0.5"
-            ></div>
-
-            <div
               cdkDrag
               [cdkDragData]="slot?.id"
               class="w-[2.89rem] h-[2.89rem]"
@@ -83,6 +79,10 @@ interface HotKey {
 
               <div *cdkDragPlaceholder></div>
             </div>
+
+            <div
+              class="bp-skin-dock-icon-border absolute -top-0.5 -left-0.5"
+            ></div>
           </div>
         </div>
       </ng-container>

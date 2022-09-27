@@ -108,7 +108,7 @@ export class UpdateInstructionTaskModalDirective {
         <div class="flex justify-center items-center mt-10">
           <button
             type="submit"
-            class="bp-button-futuristic text-black bp-font-game uppercase"
+            class="bp-skin-moba-button text-black bp-font-game uppercase"
           >
             {{ instructionTask === null ? 'Send' : 'Save' }}
           </button>

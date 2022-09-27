@@ -6,7 +6,7 @@ import { Component, EventEmitter, HostBinding, Output } from '@angular/core';
   template: `
     <!-- close button -->
     <button
-      class="bp-skin-moba-button-close outline-0 absolute right-5 top-5 z-40"
+      class="bp-skin-moba-button-close outline-0 absolute right-3 top-3 z-40"
       (click)="onClose()"
     ></button>
 

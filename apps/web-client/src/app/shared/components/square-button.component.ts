@@ -19,14 +19,16 @@ import { DefaultImageDirective } from '../directives';
       (mouseout)="onMouseOut()"
       style="border-width: 0.2rem; margin: 0.12rem"
     >
-      <div class="bp-skin-dock-icon-border absolute -top-0.5 -left-0.5"></div>
-      <figure>
+      <figure class="relative z-[5]">
         <img
           [src]="pgThumbnailUrl"
           [pgDefaultImage]="pgDefaultImageUrl"
-          class="w-9 h-9"
+          class="w-9 h-9 z-10"
         />
       </figure>
+      <div
+        class="bp-skin-dock-icon-border absolute -top-0.5 -left-0.5 z-0"
+      ></div>
     </button>
 
     <ng-template #emptySlot>

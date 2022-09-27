@@ -87,7 +87,7 @@ export class ConfirmModalDirective {
 
       <div class="flex justify-center gap-2 mt-10 mb-10">
         <button
-          class="bp-button-futuristic text-black bp-font-game uppercase"
+          class="bp-skin-moba-button text-black bp-font-game uppercase"
           (click)="onConfirm()"
         >
           Confirm

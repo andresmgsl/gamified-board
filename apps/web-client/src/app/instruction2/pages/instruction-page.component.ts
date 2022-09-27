@@ -122,7 +122,7 @@ const initialState: ViewModel = {
   template: `
     <div
       id="cy"
-      class="bp-bg-bricks h-screen"
+      class="bp-skin-moba-bg-metal h-screen"
       #drawerElement
       pgBackgroundImageZoom
       [pgZoomValue]="(zoomSize$ | ngrxPush) ?? '15%'"

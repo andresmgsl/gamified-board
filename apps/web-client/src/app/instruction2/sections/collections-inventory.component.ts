@@ -108,7 +108,7 @@ export class CollectionsInventoryDirective implements OnDestroy {
   selector: 'pg-collections-inventory',
   template: `
     <pg-inventory
-      class="mt-10 min-w-[300px] min-h-[520px] max-h-[520px]"
+      class="min-w-[366px] min-h-[520px] max-h-[525px]"
       pgDirection="left"
     >
       <h2 pgInventoryTitle class="bp-font-game-title text-3xl">Collections</h2>

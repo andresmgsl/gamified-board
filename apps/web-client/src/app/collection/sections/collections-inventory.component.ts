@@ -19,7 +19,7 @@ import { CollectionApiService } from '../services';
   selector: 'pg-collections-inventory',
   template: `
     <pg-inventory
-      class="mt-10 min-w-[300px] min-h-[500px] max-h-[500px]"
+      class="min-w-[366px] min-h-[520px] max-h-[525px]"
       pgDirection="right"
       [pgTotal]="(total$ | ngrxPush) ?? 0"
       [pgPage]="(page$ | ngrxPush) ?? 1"

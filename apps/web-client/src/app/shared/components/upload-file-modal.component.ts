@@ -123,7 +123,7 @@ export class UploadFileModalDirective {
 
         <div class="flex justify-center gap-2 mt-6 mb-12">
           <button
-            class="bp-button-futuristic text-black bp-font-game uppercase"
+            class="bp-skin-moba-button text-black bp-font-game uppercase"
             type="submit"
           >
             Confirm

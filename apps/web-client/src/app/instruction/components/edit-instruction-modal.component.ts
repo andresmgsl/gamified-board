@@ -148,7 +148,7 @@ export class UpdateInstructionModalDirective {
             Instruction name
           </label>
           <input
-            class="bp-input-futuristic p-4 outline-0"
+            class="bp-input-futuristic p-4 w-full"
             id="instruction-name-input"
             type="text"
             formControlName="name"
@@ -158,7 +158,7 @@ export class UpdateInstructionModalDirective {
         <div class="flex justify-center items-center mt-10 mb-14">
           <button
             type="submit"
-            class="bp-button-futuristic text-black bp-font-game uppercase"
+            class="bp-skin-moba-button text-black bp-font-game uppercase"
           >
             {{ instruction === null ? 'Send' : 'Save' }}
           </button>
